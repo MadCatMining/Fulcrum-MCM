@@ -168,7 +168,7 @@ function build_AdminScript {
     #WINE=wine
     ARCH=amd64
     PYTHON_VERSION=3.8.2
-    WINE=wine64
+    WINE=wine
     PYHOME=c:/python$PYTHON_VERSION
     PYTHON="$WINE $PYHOME/python.exe -OO -B"
     info "Starting Wine ..."
