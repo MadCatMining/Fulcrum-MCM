@@ -81,6 +81,7 @@ std::string GetRocksDBVersion()
     }
     // We must do things this way due to the fact that std::format is missing from macOS before SDK 13.3
     char buf[128];
+    if (sha.length() > 64) [[unlikely]] sha = sha.substr(0, 64); // just to avoid UB below
     std::snprintf(buf, sizeof(buf), "%d.%d.%d-%s", int(ROCKSDB_MAJOR), int(ROCKSDB_MINOR), int(ROCKSDB_PATCH), sha.c_str());
     return buf;
 #else
