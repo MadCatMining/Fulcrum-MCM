@@ -118,7 +118,11 @@ auto Mempool::addNewTxs(ScriptHashesAffectedSet & scriptHashesAffected,
                 }
                 // end memory saving hack
                 TXOInfo &txoInfo = tx->txos[n];
-                txoInfo = TXOInfo{out.nValue, sh, {}, {}, out.tokenDataPtr};
+                txoInfo = TXOInfo{.amount = out.nValue,
+                                  .hashX = sh,
+                                  .confirmedHeight = std::nullopt,
+                                  .txNum = 0,
+                                  .tokenDataPtr = out.tokenDataPtr};
                 auto & utxoset = tx->hashXs[sh].utxo;
                 utxoset.emplace_hint(utxoset.end(), n);
                 hxit->second.push_back(tx); // save tx to hashx -> tx vector (amortized constant time insert at end -- we will sort and uniqueify this at end of this function)
@@ -545,7 +549,7 @@ size_t Mempool::rmTxRpaAssociations(const TxRef &tx)
 
 template <typename SetLike> requires std::is_same_v<SetLike, Mempool::TxHashSet> || std::is_same_v<SetLike, Mempool::TxHashNumMap>
 std::size_t Mempool::rmTxsInHashXTxs_impl(const SetLike &txids, const ScriptHashesAffectedSet &scriptHashesAffected,
-                                          bool TRACE, const std::optional<ScriptHashesAffectedSet> &hashXsNeedingSort)
+                                          const bool TRACE, const std::optional<ScriptHashesAffectedSet> &hashXsNeedingSort)
 {
     Tic t0;
     std::size_t ct = 0, sortCt = 0;
@@ -608,14 +612,14 @@ std::size_t Mempool::rmTxsInHashXTxs(const TxHashSet &txids, const ScriptHashesA
 }
 
 std::size_t Mempool::rmTxsInHashXTxs(const TxHashNumMap &txidMap, const ScriptHashesAffectedSet &scriptHashesAffected,
-                                     bool TRACE, const std::optional<ScriptHashesAffectedSet> &hashXsNeedingSort)
+                                     const bool TRACE, const std::optional<ScriptHashesAffectedSet> &hashXsNeedingSort)
 {
     return rmTxsInHashXTxs_impl(txidMap, scriptHashesAffected, TRACE, hashXsNeedingSort);
 }
 
 auto Mempool::confirmedInBlock(ScriptHashesAffectedSet & scriptHashesAffectedOut,
                                const TxHashNumMap & txidMap, const BlockHeight confirmedHeight,
-                               bool TRACE, std::optional<float> rehashMaxLoadFactor) -> Stats
+                               const bool TRACE, std::optional<float> rehashMaxLoadFactor) -> Stats
 {
     const auto t0 = Tic();
 

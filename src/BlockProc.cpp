@@ -105,9 +105,11 @@ void PreProcessedBlock::fill(BlockHeight blockHeight, const BlockHash &blockHash
         IONum outN = 0, maxOutNSeen = 0;
         for (const auto & out : tx->vout) {
             // save the outputs seen
-            outputs.push_back(
-                OutPt{ unsigned(txIdx), outN, out.nValue, {}, out.tokenDataPtr }
-            );
+            outputs.push_back(OutPt{.txIdx = unsigned(txIdx),
+                                    .outN = outN,
+                                    .amount = out.nValue,
+                                    .spentInInputIndex = std::nullopt,
+                                    .tokenDataPtr = out.tokenDataPtr});
             estimatedThisSizeBytes += sizeof(OutPt) + (out.tokenDataPtr ? out.tokenDataPtr->GetMemSize() : 0u);
             const size_t outputIdx = outputs.size()-1;
             if (const auto cscript = out.scriptPubKey;
@@ -118,7 +120,7 @@ void PreProcessedBlock::fill(BlockHeight blockHeight, const BlockHash &blockHash
                 auto & ag = hashXAggregated[ hashX ];
                 ag.outs.emplace_back( outputIdx );
                 if (auto & vec = ag.txNumsInvolvingHashX; vec.empty() || vec.back() != txIdx)
-                    vec.emplace_back(txIdx);
+                    vec.push_back(txIdx);
             }
             else {
                 ++nOpReturns;
@@ -146,12 +148,10 @@ void PreProcessedBlock::fill(BlockHeight blockHeight, const BlockHash &blockHash
         IONum maxIONumSeen = 0;
         for (const auto & in : tx->vin) {
             // note we do place the coinbase tx here even though we ignore it later on -- we keep it to have accurate indices
-            inputs.emplace_back(InputPt{
-                    unsigned(txIdx),
-                    BTC::Hash2ByteArrayRev(in.prevout.GetTxId()),  // .prevoutHash
-                    IONum(in.prevout.GetN()), // .prevoutN
-                    {}, // .parentTxOutIdx (start out undefined)
-            });
+            inputs.push_back(InputPt{.txIdx = unsigned(txIdx),
+                                     .prevoutHash = BTC::Hash2ByteArrayRev(in.prevout.GetTxId()),
+                                     .prevoutN = IONum(in.prevout.GetN()),
+                                     .parentTxOutIdx = std::nullopt /* start out undefined */});
             estimatedThisSizeBytes += sizeof(InputPt);
             if (txIdx > 0 /* skip this part for coinbase tx */) {
                 // Update maxIONumSeen for every txn after coinbase (which always has 1 input)
