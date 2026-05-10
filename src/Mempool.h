@@ -71,7 +71,7 @@ struct Mempool
                 /// - Items appearing here also suppress confirmed utxo items from appearing in RPC listunspent (since they are spent in mempool).
                 confirmedSpends,
                 /// spends of mempool ancestor txos. Items appearing here will not appear in the ancestor's
-                /// IOInfo::utxo map (their insertion here accompanies a deletion of those ancestor items).
+                /// IOInfo::utxo set (their insertion here accompanies a deletion of those ancestor items).
                 unconfirmedSpends;
             /// UNSPENT outs, this is used to modify listunspent and get_balance. This map may get items deleted as
             /// the mempool evolves if new descendants appear that spend these txos (those descendants will list the
