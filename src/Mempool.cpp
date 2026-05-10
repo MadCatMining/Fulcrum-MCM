@@ -1362,7 +1362,6 @@ namespace {
                 // Note the amount here is totally wrong (and leads to txs that print money out of thin air),
                 // but for this test this is ok, since we care more about properly debiting/crediting spends
                 // and keeping track of utxos when testing Mempool.
-                TXOInfo ret;
                 if (auto it = confirmedTXOInfos.find(txo); it != confirmedTXOInfos.end()) {
                     // use cached
                     auto & txoInfo = it->second;
@@ -1373,6 +1372,7 @@ namespace {
                     }
                     return txoInfo;
                 }
+                TXOInfo ret;
                 ret.amount = 546 * bitcoin::Amount::satoshi();
                 ret.confirmedHeight = confirmedHeightCur;
                 // set of 50 unique hashx's, based upon the txo's hash value
