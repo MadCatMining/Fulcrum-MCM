@@ -120,11 +120,13 @@ The first argument to the script is the platform to build (in this case
 build. Two `.exe` files will be generated, `Fulcrum.exe` and `FulcrumAdmin.exe`,
 which will appear in `dist/win` after the build process completes.
 
-- *Note:* You can point the build script to any repository, not just this one, by giving it a `GIT_REPO` environment variable:
+- *Note (fork):* By default the build script now clones **this fork** (`MadCatMining/Fulcrum-MCM`), so the command above produces binaries that include the fork's multi-coin changes. It clones **committed, pushed** history for the branch/tag you name — commit and push your changes first. You can point the script elsewhere with the `GIT_REPO` environment variable:
 
-    `$ GIT_REPO=https://github.com/myusername/MyFulcrumFork contrib/build/build.sh windows master`
+    `$ GIT_REPO=$(pwd) contrib/build/build.sh windows master`  &nbsp;# build your local committed tree
 
-    `$ GIT_REPO=$(pwd) contrib/build/build.sh windows master`
+    `$ GIT_REPO=https://github.com/cculianu/Fulcrum.git contrib/build/build.sh windows master`  &nbsp;# build upstream instead
+
+  The default repository is set by `DEFAULT_GIT_REPO` in `contrib/build/common/common.sh`.
 
 ### Building a static executable for Linux
 
@@ -146,11 +148,13 @@ on either a MacOS or a Linux host system.  It builds a static Qt and static rock
 The first argument to the script is the platform to build (in this case
 `linux`). The second argument to the script is a git `branch` or `tag` to build.
 
-- *Note:* You can point the build script to any repository, not just this one, by giving it a `GIT_REPO` environment variable:
+- *Note (fork):* As with the Windows build, the script defaults to **this fork** (`MadCatMining/Fulcrum-MCM`) and clones **committed, pushed** history — commit and push first. Override with `GIT_REPO`:
 
-    `$ GIT_REPO=https://github.com/myusername/MyFulcrumFork contrib/build/build.sh linux master`
+    `$ GIT_REPO=$(pwd) contrib/build/build.sh linux master`  &nbsp;# build your local committed tree
 
-    `$ GIT_REPO=$(pwd) contrib/build/build.sh linux master`
+    `$ GIT_REPO=https://github.com/cculianu/Fulcrum.git contrib/build/build.sh linux master`  &nbsp;# build upstream instead
+
+  The default repository is set by `DEFAULT_GIT_REPO` in `contrib/build/common/common.sh`.
 
 ---
 
