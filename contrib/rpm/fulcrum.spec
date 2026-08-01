@@ -45,7 +45,7 @@ pandoc --standalone --from markdown-smart --to man doc/unix-man-page.md -o fulcr
 
 %install
 install -Dm 640 doc/fulcrum-example-config.conf %{buildroot}/%{_sysconfdir}/fulcrum.conf
-install -Dm 755 Fulcrum %{buildroot}/%{_bindir}/fulcrum
+install -Dm 755 Fulcrum-MCM %{buildroot}/%{_bindir}/fulcrum
 install -Dm 644 contrib/rpm/fulcrum.service %{buildroot}/%{_unitdir}/fulcrum.service
 install -dm 750 %{buildroot}/%{_sharedstatedir}/fulcrum
 #doc

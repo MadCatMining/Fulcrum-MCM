@@ -6,5 +6,5 @@ INCDIR="C:/tools/msys64/$TARGET_MINGW/include"
 qmake -makefile CONFIG+=release DEFINES+=ENABLE_TESTS LIBS+="-L${LIBDIR} -lzmq" INCLUDEPATH+="${INCDIR}" Fulcrum.pro
 mingw32-make
 mingw32-make install
-./release/Fulcrum.exe -v
-./release/Fulcrum.exe --test all
+./release/Fulcrum-MCM.exe -v
+./release/Fulcrum-MCM.exe --test all

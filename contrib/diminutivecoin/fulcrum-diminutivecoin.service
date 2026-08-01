@@ -31,7 +31,7 @@ User=<USER>
 Group=<USER>
 
 # Path to the compiled binary and to your config file:
-ExecStart=<ABSOLUTE_PATH_TO>/Fulcrum <ABSOLUTE_PATH_TO>/fulcrum.conf
+ExecStart=<ABSOLUTE_PATH_TO>/Fulcrum-MCM <ABSOLUTE_PATH_TO>/fulcrum.conf
 
 # Fulcrum is I/O heavy and opens many sockets/files; raise the fd limit:
 LimitNOFILE=65536

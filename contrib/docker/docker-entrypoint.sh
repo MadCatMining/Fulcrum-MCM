@@ -313,7 +313,7 @@ main() {
 
     # If invoked with anything other than the "Fulcrum" command, run it verbatim. This keeps
     # `docker run --rm -it fulcrum:tag /bin/sh` etc. working.
-    if [ "${1:-}" != "Fulcrum" ]; then
+    if [ "${1:-}" != "Fulcrum-MCM" ]; then
         exec "$@"
     fi
 
@@ -354,7 +354,7 @@ main() {
     trap 'log "received signal, stopping..."; [ -n "${FULCRUM_PID:-}" ] && kill -TERM "$FULCRUM_PID" 2>/dev/null; [ -n "${RENEW_PID:-}" ] && kill -TERM "$RENEW_PID" 2>/dev/null; exit 0' TERM INT
 
     log "Starting Fulcrum."
-    Fulcrum "$CONFIG_FILE" &
+    Fulcrum-MCM "$CONFIG_FILE" &
     FULCRUM_PID=$!
     # Wait specifically on Fulcrum (not the renewal loop) so its exit code propagates to Docker.
     wait "$FULCRUM_PID"

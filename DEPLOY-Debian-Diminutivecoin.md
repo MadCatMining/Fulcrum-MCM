@@ -75,7 +75,7 @@ make -j"$(nproc)"
 The binary is `~/Fulcrum/build/Fulcrum`. Verify:
 
 ```bash
-./Fulcrum --version
+./Fulcrum-MCM --version
 ```
 
 ## 4. Runtime dependencies (if you build on one Debian box and run on another)
@@ -143,7 +143,7 @@ mkdir -p ~/fulcrum-db
 
 ```bash
 cd ~/Fulcrum/build
-./Fulcrum ~/fulcrum.conf
+./Fulcrum-MCM ~/fulcrum.conf
 ```
 
 On first start you should see it detect the coin, e.g. a log line confirming the
@@ -162,7 +162,7 @@ Works with the unit's security hardening (`ProtectHome=true`). Put the binary,
 config and data in system paths:
 
 ```bash
-sudo install -m755 ~/Fulcrum/build/Fulcrum /usr/local/bin/Fulcrum
+sudo install -m755 ~/Fulcrum/build/Fulcrum-MCM /usr/local/bin/Fulcrum-MCM
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin fulcrum
 sudo install -d -o fulcrum -g fulcrum /var/lib/fulcrum-diminutivecoin
 sudo install -m640 -o fulcrum -g fulcrum ~/fulcrum.conf /etc/fulcrum-diminutivecoin.conf
@@ -174,7 +174,7 @@ Edit the unit's placeholders to:
 ```
 User=fulcrum
 Group=fulcrum
-ExecStart=/usr/local/bin/Fulcrum /etc/fulcrum-diminutivecoin.conf
+ExecStart=/usr/local/bin/Fulcrum-MCM /etc/fulcrum-diminutivecoin.conf
 ReadWritePaths=/var/lib/fulcrum-diminutivecoin
 ```
 
@@ -185,7 +185,7 @@ Quicker, but relax one hardening option (home is otherwise blocked):
 ```
 User=YOUR_USER
 Group=YOUR_USER
-ExecStart=/home/YOUR_USER/Fulcrum/build/Fulcrum /home/YOUR_USER/fulcrum.conf
+ExecStart=/home/YOUR_USER/Fulcrum/build/Fulcrum-MCM /home/YOUR_USER/fulcrum.conf
 ProtectHome=false
 ReadWritePaths=/home/YOUR_USER/fulcrum-db
 ```

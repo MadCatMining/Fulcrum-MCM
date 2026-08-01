@@ -35,7 +35,7 @@ RUN apt update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-COPY --from=builder /src/Fulcrum /usr/bin/Fulcrum
+COPY --from=builder /src/Fulcrum-MCM /usr/bin/Fulcrum-MCM
 COPY --from=builder /src/FulcrumAdmin /usr/bin/FulcrumAdmin
 
 VOLUME ["/data"]
@@ -53,4 +53,4 @@ COPY contrib/docker/docker-entrypoint.sh /entrypoint.sh
 COPY contrib/docker/coin-defaults.sh /coin-defaults.sh
 ENTRYPOINT ["/entrypoint.sh"]
 
-CMD ["Fulcrum"]
+CMD ["Fulcrum-MCM"]

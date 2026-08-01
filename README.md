@@ -49,7 +49,7 @@ GPLv3. See the included `LICENSE.txt` file or [visit gnu.org and read the licens
 ### Quickstart
 
 1. Download a [pre-built static binary](https://github.com/cculianu/Fulcrum/releases).
-2. Verify that the binary runs on your system by executing the binary with `./Fulcrum -h` to see the CLI options.
+2. Verify that the binary runs on your system by executing the binary with `./Fulcrum-MCM -h` to see the CLI options.
 3. Setup a configuration file and to point Fulcrum to your bitcoind JSON-RPC server, specify listening ports, TLS certificates, etc.  See: [doc/fulcrum-example-config.conf](https://github.com/cculianu/Fulcrum/blob/master/doc/fulcrum-example-config.conf) and/or [doc/fulcrum-quick-config.conf](https://github.com/cculianu/Fulcrum/blob/master/doc/fulcrum-quick-config.conf)
 4. Also see this section below on [Running Fulcrum](#running-fulcrum).
 
@@ -95,7 +95,7 @@ Ensure that `libzmq3` (Debian/Ubuntu) and/or `zeromq-devel` (Fedora/Redhat) is i
 
 Ensure that `libminiupnpc` (Debian/Ubuntu) and/or `miniupnpc-devel` (Fedora/Redhat) is installed, and that `pkg-config` is also installed.  If on Unix (macOS, Linux, or Windows MinGW), then ideally the `qmake` step will find `libminiupnpc` on your system and automatically use it. If that is not the case, you may try passing flags to `qmake` such as `LIBS+="-L/path/to/dir_containing_libminiupnpc -lminiupnpc"` and `INCLUDEPATH+="/path/to/dir_containing_miniupnpc_headers_dir"` as arguments when you invoke `qmake`.  Using `libminiupnpc` is optional but necessary if you want UPnP support in Fulcrum. If you have trouble getting Fulcrum to compile against your `libminiupnpc`, [open a new issue](https://github.com/cculianu/Fulcrum/issues) and maybe I can help.
 
-### Building the Windows static `Fulcrum.exe`
+### Building the Windows static `Fulcrum-MCM.exe`
 
 **New!** I recently added a mechanism using Docker to build a statically-linked
 Windows `.exe`. This build is 100% compatible with any stock 64-bit Windows 7 or
@@ -117,7 +117,7 @@ As such, it may take a while so be patient.
 
 The first argument to the script is the platform to build (in this case
 `windows`). The second argument to the script is a git `branch` or `tag` to
-build. Two `.exe` files will be generated, `Fulcrum.exe` and `FulcrumAdmin.exe`,
+build. Two `.exe` files will be generated, `Fulcrum-MCM.exe` and `FulcrumAdmin.exe`,
 which will appear in `dist/win` after the build process completes.
 
 - *Note (fork):* By default the build script now clones **this fork** (`MadCatMining/Fulcrum-MCM`), so the command above produces binaries that include the fork's multi-coin changes. It clones **committed, pushed** history for the branch/tag you name — commit and push your changes first. You can point the script elsewhere with the `GIT_REPO` environment variable:
@@ -160,7 +160,7 @@ The first argument to the script is the platform to build (in this case
 
 ### Running Fulcrum
 
-Execute the binary, with `-h` to see the built-in help, e.g. `./Fulcrum -h`. You can set most options from the CLI, but you can also specify a **config file** as an argument. See:
+Execute the binary, with `-h` to see the built-in help, e.g. `./Fulcrum-MCM -h`. You can set most options from the CLI, but you can also specify a **config file** as an argument. See:
 
  - [doc/fulcrum-example-config.conf](https://github.com/cculianu/Fulcrum/blob/master/doc/fulcrum-example-config.conf) in the source tree. This sample config file is very well documented with comments.
  - [doc/fulcrum-quick-config.conf](https://github.com/cculianu/Fulcrum/blob/master/doc/fulcrum-quick-config.conf) in the source tree. This is a more abbreviated config file you can use as a starting point as well.

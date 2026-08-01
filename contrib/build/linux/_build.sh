@@ -13,7 +13,7 @@ PACKAGE="$1"
 ROCKSDB_PACKAGE="$2"
 JEMALLOC_PACKAGE="$3"
 MINIUPNPC_PACKAGE="$4"
-TARGET_BINARY=Fulcrum
+TARGET_BINARY=Fulcrum-MCM
 
 top=/work
 cd "$top" || fail "Could not cd $top"

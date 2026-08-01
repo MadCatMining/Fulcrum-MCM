@@ -18,6 +18,13 @@
 #
 
 ##########################
+# Fork branding: name the produced executable "Fulcrum-MCM" on all platforms (Linux/Windows/macOS).
+# Without this, qmake defaults TARGET to the .pro basename ("Fulcrum"). The project file itself
+# stays Fulcrum.pro.
+TARGET = Fulcrum-MCM
+##########################
+
+##########################
 # Make use of compiled SDK (Alpine fulcrum-sdk builds). Guarded by exists() so this whole
 # block is completely inert for anyone who doesn't have the SDK installed -- a plain clone +
 # qmake still works and falls back to the normal rocksdb/zmq/jemalloc detection below.

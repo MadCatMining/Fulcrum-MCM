@@ -13,7 +13,7 @@ PACKAGE="$1"
 ROCKSDB_PACKAGE="$2"
 JEMALLOC_PACKAGE="$3"
 MINIUPNPC_PACKAGE="$4"
-TARGET_BINARY=Fulcrum.exe
+TARGET_BINARY=Fulcrum-MCM.exe
 TARGET_ADMIN_SCRIPT=FulcrumAdmin
 if [ -n "$5" ]; then
     DEBUG_BUILD=1  # optional 5th arg, if not empty, is debug

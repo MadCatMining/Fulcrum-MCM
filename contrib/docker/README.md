@@ -1,4 +1,4 @@
-# Fulcrum Docker image
+# Fulcrum-MCM Docker image
 
 Multi-coin Electrum / Fulcrum SPV server in a Debian 13-slim container. Built
 from `contrib/docker/Dockerfile`. The entrypoint runs a one-time setup wizard
