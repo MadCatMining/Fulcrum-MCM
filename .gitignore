@@ -72,3 +72,7 @@ Thumbs.db
 *.dll
 *.exe
 Fulcrum
+
+# Out-of-source qmake shadow-build directories (local only)
+/build/
+/build-test/
