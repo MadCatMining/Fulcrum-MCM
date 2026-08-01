@@ -183,7 +183,7 @@ fi
 
 which git > /dev/null || fail "Git is required to proceed"
 
-DEFAULT_GIT_REPO=https://github.com/cculianu/Fulcrum.git
+DEFAULT_GIT_REPO=https://github.com/MadCatMining/Fulcrum-MCM.git
 if [ -z "$GIT_REPO" ] ; then
     # If no override from env is present, use default. Support for overrides
     # for the GIT_REPO has been added to allows contributors to test containers
