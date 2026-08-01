@@ -1,0 +1,66 @@
+# systemd unit for running Fulcrum against a Diminutivecoin (DIMI) node.
+#
+# Install:
+#   1. Edit the User=, ExecStart= path, config path, and ReadWritePaths= below to
+#      match your system (placeholders are marked with <...>).
+#   2. sudo cp contrib/diminutivecoin/fulcrum-diminutivecoin.service \
+#           /etc/systemd/system/fulcrum-diminutivecoin.service
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now fulcrum-diminutivecoin
+#   5. journalctl -u fulcrum-diminutivecoin -f      # watch sync / logs
+#
+# Notes:
+#   - Logs go to the journal (view with journalctl). Do NOT set 'syslog = true'
+#     in fulcrum.conf when running under systemd, or you may get double logging.
+#   - The Fulcrum binary must already exist at the ExecStart= path and the
+#     datadir must be writable by User=.
+
+[Unit]
+Description=Fulcrum SPV/Electrum server (Diminutivecoin)
+Documentation=https://github.com/cculianu/Fulcrum
+# Start after the network is up; if diminutivecoind runs on this same host as a
+# service, also order after it (uncomment and adjust the unit name):
+After=network-online.target
+Wants=network-online.target
+#After=diminutivecoind.service
+#Wants=diminutivecoind.service
+
+[Service]
+Type=simple
+User=<USER>
+Group=<USER>
+
+# Path to the compiled binary and to your config file:
+ExecStart=<ABSOLUTE_PATH_TO>/Fulcrum <ABSOLUTE_PATH_TO>/fulcrum.conf
+
+# Fulcrum is I/O heavy and opens many sockets/files; raise the fd limit:
+LimitNOFILE=65536
+
+# Restart automatically on crash, with a short backoff:
+Restart=on-failure
+RestartSec=5
+# Give RocksDB time to flush cleanly on stop:
+TimeoutStopSec=120
+KillSignal=SIGINT
+
+# --- Security hardening (safe defaults; relax if your setup needs it) ---
+NoNewPrivileges=true
+ProtectSystem=strict
+# IMPORTANT: ProtectHome=true makes /home inaccessible. If your binary, config, or
+# datadir live under /home, either set this to false, or (recommended) move them to
+# system paths like /usr/local/bin, /etc, and /var/lib (see "Dedicated user" setup
+# in DEPLOY-Debian-Diminutivecoin.md).
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# Fulcrum must be able to write its database directory (and SSL cert dir, if used).
+# List every path Fulcrum writes to here (the 'datadir' from fulcrum.conf, etc.):
+ReadWritePaths=<ABSOLUTE_PATH_TO_DATADIR>
+
+[Install]
+WantedBy=multi-user.target

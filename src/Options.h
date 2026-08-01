@@ -147,6 +147,23 @@ public:
     /// Returns true if `addr` is in the allow set for RPC `daemon.passhtrough`
     bool isAddrInDaemonPassthroughSet(const QHostAddress & addr, Subnet * matched = nullptr) const;
 
+    // PROXY protocol (HAProxy v1/v2) support -- for running behind a trusted L4 reverse proxy (nginx/NPM, HAProxy).
+    /// corresponds to `proxy_protocol` in config. When true, connections whose immediate peer is in
+    /// `proxyProtocolSubnets` are expected to begin with a PROXY protocol header, from which the real client
+    /// address is recovered. Off by default (accepting PROXY headers from untrusted peers would let clients
+    /// spoof their source IP).
+    bool proxyProtocol = false;
+    /// corresponds to `proxy_protocol_from` in config -- the set of trusted proxy source subnets from which a
+    /// PROXY header will be honoured. If `proxyProtocol` is enabled but this is left empty, it defaults to
+    /// loopback + RFC1918/ULA/link-local private ranges (see App.cpp).
+    QList<Subnet> proxyProtocolSubnets = {};
+    /// Returns true if `addr` (the immediate TCP peer) is a trusted proxy allowed to send PROXY headers.
+    bool isAddrInProxyProtocolSet(const QHostAddress & addr, Subnet * matched = nullptr) const;
+    /// corresponds to `ws_x_forwarded_for` in config. When true, for WebSocket (ws/wss) connections whose immediate
+    /// peer is in `proxyProtocolSubnets`, the real client address is taken from the `X-Forwarded-For` request header
+    /// (as sent by an L7 reverse proxy such as NPM in HTTP mode). Shares the same trusted-proxy set as proxy_protocol.
+    bool wsForwardedFor = false;
+
     // Max history & max buffer
     static constexpr int defaultMaxBuffer = 8'000'000, maxBufferMin = 64'000, maxBufferMax = 100'000'000;
     static constexpr int defaultMaxHistory = 125'000, maxHistoryMin = 1000, maxHistoryMax = 25'000'000;

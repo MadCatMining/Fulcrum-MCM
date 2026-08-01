@@ -1246,7 +1246,7 @@ namespace {
                         const auto hashHex = QString::fromLatin1(Util::ToHexFast(txo.txHash));
                         txoVec.push_back(std::move(txo));
                         bitcoindMgr.submitRequest(
-                            &context, ::app()->newId(), "getrawtransaction", {hashHex, false},
+                            &context, ::app()->newId(), "getrawtransaction", {hashHex, BTC::GetRawTransactionVerboseArg(false)},
                             [&totalBytes, &prevTxs, &mutPrevTxs, &txnsDld, promiseRef] (const RPC::Message &msg) mutable {
                                 ++txnsDld;
                                 try {

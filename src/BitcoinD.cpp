@@ -18,6 +18,7 @@
 //
 
 #include "BitcoinD.h"
+#include "CoinConfig.h"
 #include "Util.h"
 #include "ZmqSubNotifier.h"
 
@@ -199,7 +200,7 @@ BitcoinD *BitcoinDMgr::getBitcoinD()
 
 namespace {
     struct BitcoinDVersionParseResult {
-        bool isBchd{}, isCore{}, isBU{}, isBCHN{}, isLTC{}, isFlowee{};
+        bool isBchd{}, isCore{}, isBU{}, isBCHN{}, isLTC{}, isFlowee{}, isDIMI{}, isDGC{}, isIL8P{}, isLYNX{};
         Version version;
 
         constexpr BitcoinDVersionParseResult() noexcept = default;
@@ -232,6 +233,12 @@ namespace {
             isBCHN = subversion.startsWith("/Bitcoin Cash Node:");
             isLTC = subversion.startsWith("/LitecoinCore:");
             isFlowee = subversion.startsWith("/Flowee:");
+            // Diminutivecoin: a Blackcoin-more v13 fork. Detected by its own subversion prefix.
+            // NB: confirm this prefix against the live `diminutivecoind` `getnetworkinfo` "subversion" field.
+            isDIMI = subversion.startsWith("/Diminutivecoin:");
+            isDGC = subversion.startsWith("/Digitalcoin Core:");
+            isIL8P = subversion.startsWith("/Infiniloop:");
+            isLYNX = subversion.startsWith("/Lynx Core:");
             // regular bitcoind, "version" is reliable and always the same format
             version = Version::BitcoinDCompact(val);
         }
@@ -283,8 +290,8 @@ void BitcoinDMgr::refreshBitcoinDNetworkInfo()
                 }(bitcoinDInfo.subversion, networkInfo);
                 // assign to shared object now from stack object BitcoinDVersionParseResult
                 std::tie(bitcoinDInfo.isBchd, bitcoinDInfo.isCore, bitcoinDInfo.isBU, bitcoinDInfo.isLTC,
-                         bitcoinDInfo.isFlowee, bitcoinDInfo.version)
-                    = std::tie(res.isBchd, res.isCore, res.isBU, res.isLTC, res.isFlowee, res.version);
+                         bitcoinDInfo.isFlowee, bitcoinDInfo.isDIMI, bitcoinDInfo.isDGC, bitcoinDInfo.isIL8P, bitcoinDInfo.isLYNX, bitcoinDInfo.version)
+                    = std::tie(res.isBchd, res.isCore, res.isBU, res.isLTC, res.isFlowee, res.isDIMI, res.isDGC, res.isIL8P, res.isLYNX, res.version);
                 bitcoinDInfo.relayFee = networkInfo.value("relayfee", 0.0).toDouble();
                 bitcoinDInfo.warnings = networkInfo.value("warnings", "").toString();
                 // set quirk flags: requires 0 arg `estimatefee`?
@@ -323,10 +330,12 @@ void BitcoinDMgr::refreshBitcoinDNetworkInfo()
                                  " an abundance of caution. Consider upgrading your full node to either Bitcoin Core or"
                                  " Bitcoin Knots version 28.0.0 or above.";
             } // end lock scope
-            // be sure to announce whether remote bitcoind is bitcoin core (this determines whether we use segwit or not)
-            BTC::Coin coin = BTC::Coin::BCH; // default BCH if unknown (not segwit)
-            if (res.isCore) coin = BTC::Coin::BTC; // segwit
-            else if (res.isLTC) coin = BTC::Coin::LTC; // segwit
+            // Coin selection is driven by the central CoinConfig registry (CoinConfig.cpp): the first registered coin
+            // whose `subversionPrefixes` matches `bitcoinDInfo.subversion` wins. We default to BCH when nothing
+            // matches — preserving the historical "if unknown, treat as BCH (non-segwit, with CashTokens)" behaviour.
+            BTC::Coin coin = BTC::Coin::BCH;
+            if (const auto *cc = BTC::GetCoinConfigBySubversion(bitcoinDInfo.subversion))
+                coin = cc->coin;
             emit coinDetected(coin);
             // next, be sure to set up the ping time appropriately for bchd vs bitcoind
             resetPingTimers(int(res.isBchd ? PingTimes::BCHD : PingTimes::Normal));

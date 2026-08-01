@@ -89,6 +89,7 @@ void Controller::startup()
         }
         // set the atomic -- this affects how we parse blocks, etc
         coinType.store(ctype, std::memory_order_relaxed);
+        BTC::SetCurrentCoin(ctype); // inform lower-level subsystems (e.g. BTC_Address) of the coin
         if (ctype != BTC::Coin::Unknown) {
             bitcoin::SetCurrencyUnit(coin.toStdString());
             didReceiveCoinDetectionFromBitcoinDMgr.store(true, std::memory_order_relaxed); // latch this to true now so we don't stall waiting for bitcoind to tell us our "Coin" before we do synching, because we know our coin already!
@@ -224,8 +225,15 @@ void Controller::startup()
         auto onSuccess = [this, connPtr2, hash=*optHash] (const RPC::Message &resp) {
             bitcoin::CMutableTransaction tx;
             constexpr auto kErrLine2 = "Something is wrong with either BitcoinD or our ability to understand its RPC responses.";
+            // For "era-based" coins (e.g. IL8P) a tx's per-tx nTime presence depends on its block, which a
+            // standalone deserialize can't infer. tx #1 is an early (pre-switch) tx, so derive the correct
+            // timestamp stream flags from its own block header. Leaves the override at -1 (auto) otherwise.
+            int tsFlags = -1;
+            if (const auto h = storage->heightForTxNum(1))
+                if (const auto hdr = storage->headerForHeight(*h))
+                    tsFlags = BTC::TxTimestampStreamFlags(/*objectIsBlock=*/true, *hdr, 0);
             try {
-                BTC::Deserialize(tx, Util::ParseHexFast(resp.result().toByteArray()), 0, isSegWitCoin(), isMimbleWimbleCoin(), isBCHCoin());
+                BTC::Deserialize(tx, Util::ParseHexFast(resp.result().toByteArray()), 0, isSegWitCoin(), isMimbleWimbleCoin(), isBCHCoin(), false, tsFlags);
             } catch (const std::exception &e) {
                 Error() << "Failed to deserialize tx #1 with txid " << hash.toHex() << ": " << e.what();
                 Error() << kErrLine2;
@@ -252,7 +260,7 @@ void Controller::startup()
             Warning() << "Unable to verify that BitcoinD is using txindex. Error: " << errMsg;
         };
         // ask bitcoind for tx #1 (first tx after genesis) to ensure it has txindex enabled.
-        bitcoindmgr->submitRequest(this, IdMixin::newId(), "getrawtransaction", {Util::ToHexFast(*optHash), false}, onSuccess, onError, onFail);
+        bitcoindmgr->submitRequest(this, IdMixin::newId(), "getrawtransaction", {Util::ToHexFast(*optHash), BTC::GetRawTransactionVerboseArg(false)}, onSuccess, onError, onFail);
     }, Qt::QueuedConnection);
 
     {
@@ -325,6 +333,7 @@ void Controller::on_coinDetected(const BTC::Coin detectedtype)
         // We had no coin set in DB, but we just detected the coin, set it now and return.
         // This is the common case with no misconfiguration.
         coinType = detectedtype;
+        BTC::SetCurrentCoin(detectedtype); // inform lower-level subsystems (e.g. BTC_Address) of the coin
         const auto coinName = BTC::coinToName(detectedtype);
         storage->setCoin(coinName); // thread-safe call to storage, ok to do here.
         bitcoin::SetCurrencyUnit(coinName.toStdString());
@@ -579,7 +588,7 @@ void DownloadBlocksTask::do_get(unsigned int bnum)
                     auto rawblock = Util::ParseHexFast(resp.result().toByteArray());
                     const auto header = rawblock.left(HEADER_SIZE); // we need a deep copy of this anyway so might as well take it now.
                     QByteArray chkHash;
-                    if (bool sizeOk = header.length() == HEADER_SIZE; sizeOk && (chkHash = BTC::HashRev(header)) == hash) {
+                    if (bool sizeOk = header.length() == HEADER_SIZE; sizeOk && (chkHash = BTC::HashBlockHeaderRev(header)) == hash) {
                         PreProcessedBlockPtr maybe_ppb; // either this is filled
                         Controller::RpaOnlyModeDataPtr maybe_rpaOnlyMode;  // or this is.. but not both!
                         try {

@@ -75,6 +75,17 @@ bool Options::isAddrInDaemonPassthroughSet(const QHostAddress & addr, Subnet * m
     return false;
 }
 
+bool Options::isAddrInProxyProtocolSet(const QHostAddress & addr, Subnet * matched) const
+{
+    for (const auto & sn : proxyProtocolSubnets) {
+        if (addr.isInSubnet(sn.subnet, sn.mask)) {
+            if (matched) *matched = sn;
+            return true;
+        }
+    }
+    return false;
+}
+
 QVariantMap Options::toMap() const
 {
     QVariantMap m;

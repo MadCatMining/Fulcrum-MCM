@@ -1,0 +1,60 @@
+# Fulcrum docker-compose example.
+#
+# Copy to docker-compose.yml, edit the obvious placeholders, then `docker compose up -d`.
+# First run is non-interactive (compose has no TTY by default), so every required value
+# must be supplied via environment. See contrib/docker/README.md for the full env table.
+
+services:
+  fulcrum:
+    image: fulcrum:latest
+    container_name: fulcrum
+    restart: unless-stopped
+
+    # On Linux hosts, this lets the container reach the coin daemon running on the host's
+    # 127.0.0.1. On Docker Desktop (macOS / Windows) host.docker.internal is built in;
+    # the extra_hosts line is harmless there.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    ports:
+      - "50001:50001"   # TCP (Electrum protocol)
+      - "50002:50002"   # SSL (Electrum protocol); drop this line if SSL_MODE=none
+      - "50003:50003"   # WebSocket (ws); drop if ELECTRUM_WS_PORT=0
+      - "50004:50004"   # WebSocket Secure (wss); drop if ELECTRUM_WSS_PORT=0 or SSL_MODE=none
+
+    volumes:
+      - ./fulcrum-data:/data
+      # Uncomment for SSL_MODE=letsencrypt — must be writable so the in-container renewal
+      # loop can update the certificate. Drop ":ro" if you set it.
+      # - /etc/letsencrypt:/etc/letsencrypt
+      #
+      # Uncomment for SSL_MODE=user-supplied — read-only is fine.
+      # - /etc/my-certs:/certs:ro
+
+    environment:
+      # --- coin + daemon ---
+      COIN: "BCH"                              # see src/CoinConfig.cpp for supported names
+      DAEMON_HOST: "host.docker.internal"
+      DAEMON_RPC_PORT: "8332"
+      DAEMON_RPC_USER: "CHANGE_ME"
+      DAEMON_RPC_PASSWORD: "CHANGE_ME_STRONG"  # consider docker secrets in production
+
+      # --- listeners ---
+      ELECTRUM_TCP_PORT: "50001"
+      ELECTRUM_SSL_PORT: "50002"               # set to "0" to disable SSL
+      ELECTRUM_WS_PORT: "50003"                # WebSocket (ws); set to "0" to disable
+      ELECTRUM_WSS_PORT: "50004"               # WebSocket Secure (wss); "0" to disable (needs a cert)
+
+      # --- reverse proxy (PROXY protocol) ---
+      # Enable if Fulcrum sits behind an L4 proxy (nginx / Nginx Proxy Manager / HAProxy) that sends a PROXY
+      # header, so the real client IP is logged instead of the proxy's. The proxy must be configured to send it.
+      ENABLE_PROXY_PROTOCOL: "false"           # "true" to honour PROXY headers (tcp/ssl/ws/wss) from trusted proxies
+      ENABLE_WS_XFF: "false"                    # "true" to honour X-Forwarded-For on ws/wss (L7 proxy, e.g. NPM HTTP mode)
+      # PROXY_PROTOCOL_FROM: "10.0.0.0/8"      # trusted proxy subnet(s), comma-separated; blank = loopback + private
+
+      # --- cert mode ---
+      SSL_MODE: "self-signed"                  # self-signed | letsencrypt | user-supplied | none
+      # LE_DOMAIN: "electrum.example.com"      # required for SSL_MODE=letsencrypt
+
+      # --- peering ---
+      # PEERING: "true"                        # default is per-coin; leave unset to use it

@@ -535,16 +535,33 @@ struct Container {
     std::vector<Container> values; // only for Arr
     // Note that the below pair.first QByteArray may be a shallow copy pointing into the `bytes` QByteArray
     std::vector<std::pair<QByteArray, Container>> entries; // only for Obj
-    void clear() { data.clear(); values.clear(); entries.clear(); typ = Null; }
-    void setArr() { clear(); typ = Arr; }
-    void setObj() { clear(); typ = Obj; }
-    void setBool(bool b) { clear(); typ = b ? BoolTrue: BoolFalse; }
+
+    // Note: Container is a recursive type -- its `entries` member holds `std::pair<QByteArray, Container>`
+    // by value, and std::pair (unlike std::vector) does not tolerate an incomplete element type. Newer
+    // libstdc++/clang combos (e.g. Alpine's gcc-15 libstdc++) evaluate `__is_implicitly_default_
+    // constructible<Container>` member-by-member while Container is still incomplete, which forms a
+    // cycle through that pair and fails to compile. Giving Container a user-provided default c'tor makes
+    // it a non-aggregate, which short-circuits that trait and breaks the cycle. The methods below are
+    // likewise defined out-of-line (after Container is complete) for the same reason.
+    Container() noexcept {}
+
+    void clear();
+    void setArr();
+    void setObj();
+    void setBool(bool b);
 
     /// Recursively scours this container and its sub-containers and builds the proper QVariant / nesting.
     /// Unlike this intermediate object, the resultant QVariant's string data (if any) will always be deep
     /// copies of the original string data that came in.
     QVariant toVariant() const;
 };
+
+// Defined out-of-line (after Container is a complete type) so the recursive vector members can be
+// instantiated correctly -- see the note in the class definition above.
+void Container::clear() { data.clear(); values.clear(); entries.clear(); typ = Null; }
+void Container::setArr() { clear(); typ = Arr; }
+void Container::setObj() { clear(); typ = Obj; }
+void Container::setBool(bool b) { clear(); typ = b ? BoolTrue: BoolFalse; }
 
 /// recursively scours this container and its sub-containers and builds the proper QVariant / nesting
 QVariant Container::toVariant() const {
@@ -766,7 +783,8 @@ bool parse(QVariant &out, const QByteArray &bytes, ParserBackend backend)
                         entry.second.setArr();
                     stack.push_back(&entry.second);
                 } else {
-                    top->values.emplace_back(Container{utyp, {}, {}, {}});
+                    top->values.emplace_back();
+                    top->values.back().typ = utyp;
                     stack.push_back(&top->values.back());
                 }
             }
@@ -861,7 +879,9 @@ bool parse(QVariant &out, const QByteArray &bytes, ParserBackend backend)
         }
 
         case JTOK_NUMBER: {
-            Container tmpVal{VType::Num, std::move(tokenVal), {}, {}};
+            Container tmpVal;
+            tmpVal.typ = VType::Num;
+            tmpVal.data = std::move(tokenVal);
             if (stack.empty()) {
                 root = std::move(tmpVal);
                 break;
@@ -893,7 +913,9 @@ bool parse(QVariant &out, const QByteArray &bytes, ParserBackend backend)
                 clearExpect(OBJ_NAME);
                 setExpect(COLON);
             } else {
-                Container tmpVal{VType::Str, std::move(tokenVal), {}, {}};
+                Container tmpVal;
+                tmpVal.typ = VType::Str;
+                tmpVal.data = std::move(tokenVal);
                 if (stack.empty()) {
                     root = std::move(tmpVal);
                     break;

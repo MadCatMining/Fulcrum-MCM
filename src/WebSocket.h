@@ -454,6 +454,11 @@ namespace WebSocket
         unsigned maxMessageQueue() const { return maxframes; }
         void setMaxMessageQueue(unsigned val) { if (val) maxframes = val; }
 
+        /// Overrides the peer address/port reported by this socket. Used to inject the real client address
+        /// recovered from an `X-Forwarded-For` header when running behind a trusted reverse proxy. Call this after
+        /// the handshake has succeeded (once the request headers are available).
+        void setReportedPeer(const QHostAddress &addr, quint16 port) { setPeerAddress(addr); setPeerPort(port); }
+
         /// From QTcpSocket, etc
         void resume() override { socket->resume(); }
         bool setSocketDescriptor(qintptr socketDescriptor, SocketState state = ConnectedState, OpenMode openMode = ReadWrite) override

@@ -36,6 +36,7 @@
 
 #include <concepts>
 #include <cstddef> // for std::nullptr_t
+#include <functional> // for std::function
 #include <memory> // for shared_ptr
 #include <mutex>
 #include <optional>
@@ -137,6 +138,7 @@ protected:
 
 class BitcoinDMgr;
 class Client;
+namespace WebSocket { class Wrapper; }
 class QSslSocket;
 class Storage;
 class SubsMgr;
@@ -230,23 +232,38 @@ protected:
     //
 
     /// Derived classes that re-implement incomingConnection should call this to attach the Client::PerIPDataHolder_Temp
-    /// object. (Or, alternatively, call createSocketFromDescriptorAndCheckLimits).
+    /// object. (Call this after createSocketFromDescriptor and after any PROXY protocol header has been processed.)
     ///
     /// Returns false if the connection would exceed limits.
     ///
     /// Note: On false return, socket->abort() and then socket->deleteLater() are called by this function.
     bool attachPerIPDataAndCheckLimits(QTcpSocket *);
     /// Used internally by both this incomingConnection implementation and ServerSSL's implementation.
-    /// SockType must be QTcpSocket or QSslSocket.
+    /// Creates the socket object and assigns it the given descriptor. Does NOT attach per-IP data or check limits
+    /// (call attachPerIPDataAndCheckLimits for that, after any PROXY protocol header has been processed).
+    /// SockType must be QTcpSocket or QSslSocket. The returned object is a subclass that additionally supports
+    /// overriding its reported peer address/port (see readProxyProtocolThenProceed); on error nullptr is returned.
     template <typename SockType>
     requires std::is_same_v<QTcpSocket, SockType> || std::is_same_v<QSslSocket, SockType>
-    SockType *createSocketFromDescriptorAndCheckLimits(qintptr socketDescriptor);
+    SockType *createSocketFromDescriptor(qintptr socketDescriptor);
+    /// Returns true if `socket`'s immediate peer is a trusted proxy from which a PROXY protocol header should be read.
+    bool shouldReadProxyProtocol(QTcpSocket *socket) const;
+    /// Asynchronously reads and strips a leading PROXY protocol (v1/v2) header from `socket`, then applies the real
+    /// client address/port to the socket and invokes `proceed()`. Must only be called when shouldReadProxyProtocol()
+    /// is true. On malformed header, timeout, or disconnect, the socket is aborted/deleted and `proceed` is NOT called.
+    void readProxyProtocolThenProceed(QTcpSocket *socket, std::function<void()> proceed);
     /// Initiates the WebSocket handshake.  If false is returned, the passed-in socket has already been queued for
     /// deletion. If true is returned, some time later after handshake success, addPendingConnection() will get called
     /// and newConnection() will be emitted.  On handshake failure errors will be logged and the socket object will get
     /// deleted.  Note that a WebSocket::Wrapper will be used to wrap the socket and that will end up being added
     /// to addPendingConnection().
     bool startWebSocketHandshake(QTcpSocket *);
+    /// Called after a WebSocket handshake succeeds, before the connection is enqueued. If `ws_x_forwarded_for` is
+    /// enabled and the immediate peer is a trusted proxy, this overrides the reported peer address with the real
+    /// client address from the `X-Forwarded-For` header and re-keys the per-IP accounting accordingly. Returns
+    /// false if, after resolving the real client IP, the per-IP connection limit would be exceeded (caller should
+    /// then drop the connection); true otherwise.
+    bool finalizeWebSocketPeerAndLimits(WebSocket::Wrapper *ws);
     ///
     // /end `incomingConnection` Helpers
 
@@ -568,6 +585,10 @@ protected:
     /// server-side handshake.
     void incomingConnection(qintptr) override;
 private:
+    /// Sets up the TLS configuration/timeout on `socket` and starts the server-side TLS handshake. Called after any
+    /// PROXY protocol header has been consumed and per-IP limits have been checked.
+    void beginServerEncryption(QSslSocket *socket);
+
     QSslConfiguration sslConfiguration;
 };
 

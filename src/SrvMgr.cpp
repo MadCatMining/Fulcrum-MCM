@@ -20,6 +20,7 @@
 
 #include "App.h"
 #include "BitcoinD.h"
+#include "CoinConfig.h"
 #include "Compat.h"
 #include "PeerMgr.h"
 #include "ServerMisc.h"
@@ -110,7 +111,14 @@ void SrvMgr::startServers()
     else
         upnp.reset();
 
-    if (options->peerDiscovery) {
+    // Some coins have no built-in peer server lists and don't participate in the Electrum peer network. The CoinConfig
+    // registry advertises this via an empty `peerResourcePath` (e.g. Diminutivecoin).
+    const bool coinSupportsPeering = !BTC::GetCoinConfig(BTC::coinFromName(storage->getCoin())).peerResourcePath.isEmpty();
+
+    if (options->peerDiscovery && !coinSupportsPeering) {
+        Log() << "SrvMgr: peer discovery is not supported for coin \"" << storage->getCoin() << "\"; disabling peering";
+        peermgr.reset();
+    } else if (options->peerDiscovery) {
         Log() << "SrvMgr: starting PeerMgr ...";
         peermgr = std::make_shared<PeerMgr>(this, storage, options);
 

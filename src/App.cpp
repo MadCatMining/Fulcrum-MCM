@@ -423,6 +423,24 @@ void App::parseArgs()
        " Suggested values for port: %1 on mainnet and %2 on testnet.\n").arg(Options::DEFAULT_PORT_WSS).arg(Options::DEFAULT_PORT_WSS + 10000),
        QString("interface:port"),
     },
+    { "proxy-protocol",
+       QString("Accept the HAProxy PROXY protocol (v1/v2) on all listeners so that the real client address is"
+       " recovered when " APPNAME " runs behind a trusted L4 reverse proxy (e.g. an nginx/Nginx-Proxy-Manager"
+       " `stream` or HAProxy). A header is only honoured when the immediate peer is one of the trusted proxy"
+       " sources given by --proxy-protocol-from. Config file equivalent: proxy_protocol.\n"),
+    },
+    { "ws-x-forwarded-for",
+       QString("For WebSocket (ws/wss) connections arriving from a trusted proxy (see --proxy-protocol-from), take"
+       " the real client address from the X-Forwarded-For request header, as sent by an L7 reverse proxy (e.g."
+       " Nginx Proxy Manager in HTTP mode). Config file equivalent: ws_x_forwarded_for.\n"),
+    },
+    { "proxy-protocol-from",
+       QString("Comma-separated list of trusted proxy subnets from which a PROXY protocol header (--proxy-protocol)"
+       " and/or an X-Forwarded-For header (--ws-x-forwarded-for) will be honoured. If left unspecified while either"
+       " of those is enabled, it defaults to loopback plus the RFC1918/ULA/link-local private ranges. Config file"
+       " equivalent: proxy_protocol_from.\n"),
+       QString("subnets"),
+    },
     { { "c", "cert" },
        QString("Specify a PEM file to use as the server's SSL certificate. This option is required if the -s/--ssl"
        " and/or the -W/--wss options appear at all on the command-line. The file should contain either a single"
@@ -1108,6 +1126,48 @@ void App::parseArgs()
         // log this later in case we are in syslog mode
         Util::AsyncOnObject(this, [parsed]{
             Debug() << "config: daemon_passthrough_subnets = " << (parsed.isEmpty() ? "None" : parsed.join(", "));
+        });
+    }
+    // Reverse-proxy real-client-IP recovery: `proxy_protocol` (PROXY v1/v2 on any listener) and/or
+    // `ws_x_forwarded_for` (X-Forwarded-For on WebSocket listeners). Both honour a header only when the immediate
+    // peer is in the shared trusted-proxy set `proxy_protocol_from`.
+    options->proxyProtocol = parser.isSet("proxy-protocol") || conf.boolValue("proxy_protocol");
+    options->wsForwardedFor = parser.isSet("ws-x-forwarded-for") || conf.boolValue("ws_x_forwarded_for");
+    if (options->proxyProtocol || options->wsForwardedFor) {
+        // Parse the trusted-proxy subnet list, if given (CLI takes precedence over config).
+        const QString fromStr = parser.isSet("proxy-protocol-from") ? parser.value("proxy-protocol-from")
+                                                                     : conf.value("proxy_protocol_from");
+        if (!fromStr.isEmpty()) {
+            options->proxyProtocolSubnets.clear();
+            const auto sl = fromStr.split(",");
+            for (const auto & s : sl) {
+                const auto st = s.trimmed();
+                if (st.isEmpty())
+                    continue;
+                auto subnet = Options::Subnet::fromString(st);
+                if (!subnet.isValid())
+                    throw BadArgs(QString("proxy_protocol_from: Failed to parse %1").arg(st));
+                options->proxyProtocolSubnets.push_back(subnet);
+            }
+        }
+        if (options->proxyProtocolSubnets.isEmpty()) {
+            // Secure-but-usable default: trust only loopback and private (non-routable) ranges, which is where a
+            // co-located reverse proxy normally lives. If the proxy is on a public IP the admin must list it
+            // explicitly via `proxy_protocol_from`.
+            for (const char *cidr : { "127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+                                      "fc00::/7", "169.254.0.0/16", "fe80::/10" }) {
+                auto subnet = Options::Subnet::fromString(QString::fromLatin1(cidr));
+                if (subnet.isValid())
+                    options->proxyProtocolSubnets.push_back(subnet);
+            }
+        }
+        QStringList parsed;
+        for (const auto & sn : std::as_const(options->proxyProtocolSubnets))
+            parsed.push_back(sn.toString());
+        Util::AsyncOnObject(this, [parsed, pp = options->proxyProtocol, xff = options->wsForwardedFor]{
+            Debug() << "config: proxy_protocol = " << (pp ? "true" : "false")
+                    << ", ws_x_forwarded_for = " << (xff ? "true" : "false")
+                    << "; trusting proxy sources: " << parsed.join(", ");
         });
     }
     if (conf.hasValue("max_history")) {

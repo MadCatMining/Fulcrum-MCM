@@ -121,7 +121,8 @@ CMutableTransaction::CMutableTransaction()
     : nVersion(CTransaction::CURRENT_VERSION), nLockTime(0) {}
 
 CMutableTransaction::CMutableTransaction(const CTransaction &tx)
-    : nVersion(tx.nVersion), vin(tx.vin), vout(tx.vout), nLockTime(tx.nLockTime), mw_blob(tx.mw_blob) {}
+    : nVersion(tx.nVersion), vin(tx.vin), vout(tx.vout), nLockTime(tx.nLockTime), nTime(tx.nTime),
+      fHasTime(tx.fHasTime), mw_blob(tx.mw_blob) {}
 
 TxId CMutableTransaction::GetId() const { return TxId(ComputeHash(false)); }
 TxHash CMutableTransaction::GetHash() const { return TxHash(ComputeHash(false)); }
@@ -131,13 +132,13 @@ TxHash CMutableTransaction::GetHash() const { return TxHash(ComputeHash(false));
  * TODO: remove the need for this default constructor entirely.
  */
 CTransaction::CTransaction() noexcept
-    : nVersion{CTransaction::CURRENT_VERSION}, nLockTime{0u} {}
+    : nVersion{CTransaction::CURRENT_VERSION}, nLockTime{0u}, nTime{0u}, fHasTime{false} {}
 CTransaction::CTransaction(const CMutableTransaction &tx)
-    : nVersion(tx.nVersion), vin(tx.vin), vout(tx.vout), nLockTime(tx.nLockTime), mw_blob(tx.mw_blob),
-      hash(ComputeHash(false)) {}
+    : nVersion(tx.nVersion), vin(tx.vin), vout(tx.vout), nLockTime(tx.nLockTime), nTime(tx.nTime),
+      fHasTime(tx.fHasTime), mw_blob(tx.mw_blob), hash(ComputeHash(false)) {}
 CTransaction::CTransaction(CMutableTransaction &&tx)
     : nVersion(tx.nVersion), vin(std::move(tx.vin)), vout(std::move(tx.vout)), nLockTime(tx.nLockTime),
-      mw_blob(std::move(tx.mw_blob)), hash(ComputeHash(false)) {}
+      nTime(tx.nTime), fHasTime(tx.fHasTime), mw_blob(std::move(tx.mw_blob)), hash(ComputeHash(false)) {}
 
 } // end namespace bitcoin
 #ifdef __clang__

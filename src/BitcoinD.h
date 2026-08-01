@@ -64,6 +64,10 @@ struct BitcoinDInfo {
     bool isBU = false; ///< true if subversion string starts with "/BCH Unlimited:"
     bool isFlowee = false; ///< true if subversion string starts with "/Flowee"
     bool isBchd = false; ///< true if remote bitcoind subversion is: /bchd:...
+    bool isDIMI = false; ///< true if we are connected to a Diminutivecoin (Blackcoin-more fork) node
+    bool isDGC = false; ///< true if we are connected to a Digitalcoin node
+    bool isIL8P = false; ///< true if we are connected to a Infiniloop node
+    bool isLYNX = false; ///< true if we are connected to a Lynx core node
 
     /// The below field is populated from bitcoind RPC `getzmqnotifications` (if supported and if we are compiled to
     /// use libzmq).  Note that entires in here are auto-transformed by BitcoinDMgr such that:

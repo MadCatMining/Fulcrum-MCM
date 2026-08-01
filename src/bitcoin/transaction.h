@@ -42,6 +42,17 @@ static constexpr int SERIALIZE_TRANSACTION_USE_WITNESS = 0x40000000;
 static constexpr int SERIALIZE_TRANSACTION_USE_MWEB = 0x20000000;
 // Added by Calin to optionally enable/disbale token ser/deser (BCH-specific)
 static constexpr int SERIALIZE_TRANSACTION_USE_CASHTOKENS = 0x10000000;
+// Added for Diminutivecoin (a Blackcoin-more fork): version-1 transactions are serialized with a 4-byte nTime
+// field immediately after nVersion (Peercoin/Blackcoin style). This nTime is part of the txid hash. Version-2+
+// transactions on the same chain do *not* carry this field. When this flag is set in the stream version, the
+// (de)serializer reads/writes nTime for nVersion==1 transactions.
+static constexpr int SERIALIZE_TRANSACTION_USE_TIMESTAMP = 0x08000000;
+// Added for coins (e.g. Infiniloop/IL8P) where a Blackcoin-style "protocol v2" switch dropped the
+// per-transaction nTime for ALL tx versions -- not just nVersion==1. When this flag is set together
+// with SERIALIZE_TRANSACTION_USE_TIMESTAMP, the (de)serializer reads/writes nTime for every tx
+// version. The caller decides this per-block from the block header version (see BTC::Deserialize),
+// since on these chains all txs in a pre-switch block carry nTime regardless of their tx version.
+static constexpr int SERIALIZE_TRANSACTION_TIMESTAMP_ALLVERS = 0x04000000;
 
 static_assert (sizeof(int) >= 4);
 
@@ -219,8 +230,22 @@ inline void UnserializeTransaction(TxType &tx, Stream &s) {
     // MODIFIED BY CALIN -- To allow for deserializing SegWit blocks as well as LTC MimbleWimble data
     const bool fAllowWitness = s.GetVersion() & SERIALIZE_TRANSACTION_USE_WITNESS;
     const bool fAllowMimble = s.GetVersion() & SERIALIZE_TRANSACTION_USE_MWEB;
+    const bool fAllowTimestamp = s.GetVersion() & SERIALIZE_TRANSACTION_USE_TIMESTAMP;
+    const bool fTimestampAllVers = s.GetVersion() & SERIALIZE_TRANSACTION_TIMESTAMP_ALLVERS;
     unsigned char flags = 0;
     s >> tx.nVersion;
+    // Peercoin/Blackcoin lineage: a 4-byte nTime may sit immediately after nVersion, and is part of the
+    // txid hash. Two variants:
+    //  * Diminutivecoin (Blackcoin-more): nTime only on nVersion==1 (PoW-era) txs; v2 (PoS) txs omit it.
+    //  * Infiniloop (IL8P): nTime on ALL tx versions until a protocol-v2 block-version switch dropped it
+    //    (fTimestampAllVers -- set per-block by the caller from the block header version).
+    if (fAllowTimestamp && (fTimestampAllVers || tx.nVersion == 1)) {
+        s >> tx.nTime;
+        tx.fHasTime = true;
+    } else {
+        tx.nTime = 0;
+        tx.fHasTime = false;
+    }
     tx.vin.clear();
     tx.vout.clear();
     tx.mw_blob.reset();
@@ -277,6 +302,9 @@ inline void SerializeTransaction(const TxType &tx, Stream &s) {
     const bool fAllowMimble = s.GetVersion() & SERIALIZE_TRANSACTION_USE_MWEB;
 
     s << tx.nVersion;
+    // Diminutivecoin: write the version-1 nTime field back out. This is driven by tx.fHasTime (set at deserialize
+    // time) rather than the stream flag, so that txid hashing (which serializes with SER_GETHASH) includes nTime.
+    if (tx.fHasTime) s << tx.nTime;
     unsigned char flags = 0;
     // Consistency check
     if (fAllowWitness) {
@@ -386,6 +414,9 @@ public:
     const std::vector<CTxOut> vout;
     const uint32_t nLockTime;
 
+    const uint32_t nTime;   //! Diminutivecoin (Blackcoin-more fork) only: version-1 tx timestamp; 0 otherwise
+    const bool fHasTime;    //! true iff this tx carries an nTime field (governs serialization & txid hashing)
+
     const litecoin_bits::MimbleBlobPtr mw_blob; //! Litecoin only
 
 private:
@@ -424,6 +455,9 @@ public:
     std::vector<CTxIn> vin;
     std::vector<CTxOut> vout;
     uint32_t nLockTime;
+
+    uint32_t nTime = 0;        //! Diminutivecoin only: version-1 tx timestamp; 0 otherwise
+    bool fHasTime = false;     //! true iff this tx carries an nTime field (governs serialization & txid hashing)
 
     litecoin_bits::MimbleBlobPtr mw_blob; //! Litecoin only
 

@@ -22,9 +22,11 @@
 #include "BitcoinD.h"
 #include "BTC.h"
 #include "BTC_Address.h"
+#include "CoinConfig.h"
 #include "Compat.h"
 #include "Merkle.h"
 #include "PeerMgr.h"
+#include "ProxyProtocol.h"
 #include "Rpa.h"
 #include "ServerMisc.h"
 #include "SrvMgr.h"
@@ -518,12 +520,35 @@ bool ServerBase::attachPerIPDataAndCheckLimits(QTcpSocket *socket)
     return ok;
 }
 
+namespace {
+    /// Non-QObject interface for a socket whose reported peer address/port can be overridden (used to inject the real
+    /// client address recovered from a PROXY protocol header). Recovered at runtime via dynamic_cast.
+    class ProxyablePeer {
+    public:
+        virtual ~ProxyablePeer() = default;
+        virtual void setProxiedPeer(const QHostAddress &addr, quint16 port) = 0;
+    };
+    /// Thin subclass of QTcpSocket/QSslSocket that exposes QAbstractSocket's protected setPeerAddress/setPeerPort.
+    /// Overriding the reported peer address here means all downstream code (per-IP limits, Client logging, banning,
+    /// and the WebSocket::Wrapper -- which copies peerAddress() at construction) transparently sees the real client
+    /// address with no further changes. No Q_OBJECT/moc needed (adds no signals/slots of its own).
+    template <typename Base>
+    class ProxyableSocket final : public Base, public ProxyablePeer {
+    public:
+        explicit ProxyableSocket(QObject *parent) : Base(parent) {}
+        void setProxiedPeer(const QHostAddress &addr, quint16 port) override {
+            this->setPeerAddress(addr);
+            this->setPeerPort(port);
+        }
+    };
+} // namespace
+
 /// Used internally by both this incomingConnection implementation and ServerSSL's implementation.
 /// SockType must be QTcpSocket or QSslSocket.
 template <typename SockType> requires std::is_same_v<QTcpSocket, SockType> || std::is_same_v<QSslSocket, SockType>
-SockType *ServerBase::createSocketFromDescriptorAndCheckLimits(qintptr socketDescriptor)
+SockType *ServerBase::createSocketFromDescriptor(qintptr socketDescriptor)
 {
-    auto socket = new SockType(this);
+    auto socket = new ProxyableSocket<SockType>(this);
     if (!socket->setSocketDescriptor(socketDescriptor)) {
         /// This branch won't ever be taken unless somehow this class or a derived class ends up being radically
         /// misused. `setSocketDescriptor` returning false means the socket engine doesn't recognize the fd.  We added
@@ -534,11 +559,143 @@ SockType *ServerBase::createSocketFromDescriptorAndCheckLimits(qintptr socketDes
         delete socket;
         return nullptr;
     }
-    // we do this thing here to check connection limits as early as possible in the connection pipeline
-    if (!attachPerIPDataAndCheckLimits(socket))
-        // called function already called socket->deleteLater() for us in this branch.
-        return nullptr;
     return socket;
+}
+
+bool ServerBase::shouldReadProxyProtocol(QTcpSocket *socket) const
+{
+    return options->proxyProtocol && options->isAddrInProxyProtocolSet(socket->peerAddress());
+}
+
+void ServerBase::readProxyProtocolThenProceed(QTcpSocket *socket, std::function<void()> proceed)
+{
+    auto conns = std::make_shared<QList<QMetaObject::Connection>>();
+    auto timer = new QTimer(socket); // parented to socket -> freed with it
+    timer->setObjectName(QStringLiteral("PROXY protocol header timer"));
+    timer->setSingleShot(true);
+
+    auto cleanup = [conns, timer] {
+        timer->stop();
+        for (const auto & c : std::as_const(*conns))
+            QObject::disconnect(c);
+        conns->clear();
+    };
+    // Malformed header from a trusted proxy -> drop (something is genuinely wrong with the proxy config).
+    auto fail = [socket, cleanup](const QString & why) {
+        cleanup();
+        Warning() << "PROXY protocol: " << why << " from " << socket->peerAddress().toString()
+                  << "; dropping connection";
+        socket->abort();
+        socket->deleteLater();
+    };
+    // No header arrived (timeout) or the peer sent non-PROXY data -> continue using the peer (proxy) address rather
+    // than dropping. This keeps connectivity robust: e.g. a direct client in the trusted subnet, a health probe, or
+    // a proxy that simply isn't sending the header will still be served (just without real-IP recovery). It is safe
+    // because we only ever *honour* a header from a trusted source; falling back to the true socket address cannot
+    // be used to spoof an IP.
+    auto proceedNoHeader = [socket, cleanup, proceed](const QString & why) {
+        cleanup();
+        DebugM("PROXY protocol: ", why, " from ", socket->peerAddress().toString(),
+               "; proceeding with peer address (no real-IP recovery)");
+        proceed();
+    };
+    auto tryParse = [socket, proceed, cleanup, fail, proceedNoHeader] {
+        const QByteArray buf = socket->peek(ProxyProtocol::kMaxHeaderLen);
+        ProxyProtocol::Result res;
+        switch (ProxyProtocol::parse(buf, res)) {
+        case ProxyProtocol::Status::NeedMore:
+            return; // wait for more bytes -- readyRead will call us again
+        case ProxyProtocol::Status::Error:
+            fail("malformed header");
+            return;
+        case ProxyProtocol::Status::Absent:
+            proceedNoHeader("peer sent no PROXY header");
+            return;
+        case ProxyProtocol::Status::Parsed:
+            socket->read(res.consumed); // discard the header bytes so downstream sees clean protocol data
+            if (res.haveAddr) {
+                if (auto *pp = dynamic_cast<ProxyablePeer *>(socket))
+                    pp->setProxiedPeer(res.srcAddr, res.srcPort);
+            }
+            cleanup();
+            proceed();
+            return;
+        }
+    };
+
+    *conns += connect(socket, &QIODevice::readyRead, this, tryParse);
+    // If the peer hangs up before sending anything, just let the socket die quietly (common for probes/scanners).
+    *conns += connect(socket, &QAbstractSocket::disconnected, this, [socket, cleanup] { cleanup(); socket->deleteLater(); });
+    *conns += connect(timer, &QTimer::timeout, this, [proceedNoHeader] { proceedNoHeader("timed out waiting for header"); });
+    timer->start(5'000); // give the proxy up to 5 seconds to send the header before falling back
+
+    // The header may already be buffered (it typically arrives immediately with the connection).
+    if (socket->bytesAvailable() > 0)
+        tryParse();
+}
+bool ServerBase::finalizeWebSocketPeerAndLimits(WebSocket::Wrapper *ws)
+{
+    if (!options->wsForwardedFor)
+        return true; // feature disabled -- nothing to do
+    QTcpSocket * const under = ws->wrappedSocket();
+    if (!under)
+        return true;
+    // Only honour X-Forwarded-For if the immediate peer (the proxy) is trusted. At this point ws->peerAddress()
+    // reflects the immediate proxy -- unless proxy_protocol already resolved a real client address, in which case
+    // that address won't be in the trusted set and we correctly skip XFF here.
+    const QHostAddress immediate = ws->peerAddress();
+    if (!options->isAddrInProxyProtocolSet(immediate))
+        return true;
+    const QVariantMap headers = under->property("websocket-headers").toMap();
+    const QString xff = headers.value(QStringLiteral("x-forwarded-for")).toString();
+    if (xff.isEmpty())
+        return true;
+    // Take the right-most entry: it is the address the trusted proxy itself observed. Any entries to its left are
+    // client-supplied and therefore untrustworthy.
+    QHostAddress real;
+    const auto parts = xff.split(',', Qt::SkipEmptyParts);
+    for (auto it = parts.crbegin(); it != parts.crend(); ++it)
+        if (real.setAddress(it->trimmed()))
+            break;
+    if (real.isNull()) {
+        DebugM("ws_x_forwarded_for: could not parse an IP from '", xff, "' (via ", immediate.toString(), ")");
+        return true;
+    }
+    // Recover an optional real client port from X-Forwarded-Port; otherwise keep the current (proxy) port.
+    quint16 port = ws->peerPort();
+    {
+        bool ok = false;
+        const uint p = headers.value(QStringLiteral("x-forwarded-port")).toString().toUInt(&ok);
+        if (ok && p <= 65535u)
+            port = static_cast<quint16>(p);
+    }
+    ws->setReportedPeer(real, port);
+
+    // Re-key the per-IP accounting from the proxy IP to the real client IP (attachPerIPDataAndCheckLimits ran early
+    // in incomingConnection, before the real client IP was known). The holder is attached to the underlying socket.
+    auto holder = under->findChild<detail::PerIPDataHolder_Temp *>(detail::PerIPDataHolder_Temp::kName,
+                                                                   Qt::FindChildrenRecursively);
+    if (holder && holder->perIPData) {
+        if (auto newData = srvmgr->getOrCreatePerIPData(real); newData != holder->perIPData) {
+            --holder->perIPData->nClients;      // release the count taken on the proxy IP
+            holder->perIPData = std::move(newData);
+            ++holder->perIPData->nClients;      // and take one on the real client IP instead
+        }
+        // Enforce the per-IP connection limit against the real client IP now that we know it.
+        const auto maxPerIP = options->maxClientsPerIP;
+        if (maxPerIP > 0 && !holder->perIPData->isWhitelisted() && holder->perIPData->nClients > maxPerIP) {
+            if (const qint64 now = Util::getTime(), last = holder->perIPData->lastConnectionLimitReachedWarning.load();
+                    !last || (now - last)/1e3 >= ServerMisc::kMaxClientsPerIPWarningRateLimitSecs) {
+                holder->perIPData->lastConnectionLimitReachedWarning.store(now);
+                Log() << "Connection limit (" << maxPerIP << ") exceeded for " << real.toString()
+                      << " (via proxy " << immediate.toString() << "), connection refused";
+            }
+            // Returning false makes the caller drop the ws; the holder's dtor releases the count we took above.
+            return false;
+        }
+    }
+    DebugM("ws_x_forwarded_for: ", immediate.toString(), " -> real client ", real.toString());
+    return true;
 }
 bool ServerBase::startWebSocketHandshake(QTcpSocket *socket)
 {
@@ -549,6 +706,11 @@ bool ServerBase::startWebSocketHandshake(QTcpSocket *socket)
     *tmpConnections += connect(ws, &WebSocket::Wrapper::handshakeSuccess, this, [this, ws, tmpConnections] {
         for (const auto & conn : std::as_const(*tmpConnections))
             disconnect(conn);
+        if (!finalizeWebSocketPeerAndLimits(ws)) {
+            // Per-IP limit exceeded once the real client IP was resolved from X-Forwarded-For -- drop it.
+            ws->deleteLater();
+            return;
+        }
         addPendingConnection(ws);
         emit newConnection(); // <-- we must emit here because we went asynch and are doing this 'some time later', and the calling code emitted a spurous newConnection() on our behalf previously.. and this is the *real* newConnection()
     });
@@ -567,21 +729,35 @@ bool ServerBase::startWebSocketHandshake(QTcpSocket *socket)
 }
 void ServerBase::incomingConnection(qintptr socketDescriptor)
 {
-    auto socket = createSocketFromDescriptorAndCheckLimits<QTcpSocket>(socketDescriptor);
+    auto socket = createSocketFromDescriptor<QTcpSocket>(socketDescriptor);
     if (!socket)
-        // Per-IP connection limit reached or low-level error. Fail. (Error was already logged)
+        // Low-level error creating the socket. Fail. (Error was already logged)
         return;
 
-    if (!usesWS) {
-        // Classic non-WebSocket mode.  We are done; enqueue the connection.
-        // `newConnection` signal will be emitted for us by the calling code in QAbstractSocket when we return.
-        addPendingConnection(socket);
+    // Enqueues the fully-prepared socket. `emitNewConn` must be true only on the asynchronous (PROXY) path, because
+    // on the synchronous path QAbstractSocket emits newConnection() for us after incomingConnection() returns.
+    auto proceed = [this, socket](bool emitNewConn) {
+        if (!attachPerIPDataAndCheckLimits(socket))
+            // Per-IP connection limit reached (or client already gone). Fail. (Already logged / socket deleted.)
+            return;
+        if (!usesWS) {
+            // Classic non-WebSocket mode.  We are done; enqueue the connection.
+            addPendingConnection(socket);
+            if (emitNewConn) emit newConnection();
+            return;
+        }
+        // WebSocket mode -- create the wrapper object and further negotiate the handshake.  Later on newConnection()
+        // will be emitted again on success, or the socket will be auto-deleted on failure.
+        startWebSocketHandshake(socket);
+    };
+
+    if (!shouldReadProxyProtocol(socket)) {
+        // Fast path: no PROXY protocol -- behave exactly as before (synchronous; Qt emits newConnection() for us).
+        proceed(false);
         return;
     }
-
-    // WebSocket mode -- create the wrapper object and further negotiate the handshake.  Later on newConnection() will
-    // be emitted again on success, or the socket will be auto-deleted on failure.
-    startWebSocketHandshake(socket);
+    // PROXY protocol path: read/strip the header asynchronously, then proceed (and emit newConnection() ourselves).
+    readProxyProtocolThenProceed(socket, [proceed] { proceed(true); });
 }
 
 Client *
@@ -2074,13 +2250,15 @@ void Server::rpc_blockchain_transaction_broadcast(Client *c, const RPC::BatchId 
                 // https://github.com/Electron-Cash/electrumx/blob/fbd00416d804c286eb7de856e9399efb07a2ceaf/electrumx/server/session.py#L1526
                 // https://github.com/Electron-Cash/electrumx/blob/fbd00416d804c286eb7de856e9399efb07a2ceaf/electrumx/lib/coins.py#L397
                 QString clientName, website;
-                if (coin == BTC::Coin::BTC) {
+                const auto &coinCfg = BTC::GetCoinConfig(coin);
+                if (coinCfg.warnVulnerableElectrum) {
                     clientName = "Electrum";
                     website = "https://electrum.org/";
-                } else if (coin == BTC::Coin::LTC) {
+                } else if (coinCfg.warnVulnerableElectrumLTC) {
                     clientName = "Electrum-LTC";
                     website = "https://electrum-ltc.org/";
                 } else {
+                    // BCH default (and any unrecognised coin: warnVulnerableElectronCash is the safe fallback target)
                     clientName = "Electron Cash";
                     website = "https://electroncash.org/";
                 }
@@ -2273,7 +2451,7 @@ void Server::rpc_blockchain_transaction_get(Client *c, const RPC::BatchId batchI
             throw RPCError("Invalid verbose argument; expected boolean");
         verbose = verbArg;
     }
-    generic_async_to_bitcoind(c, batchId, m.id, "getrawtransaction", QVariantList{ Util::ToHexFast(txHash), verbose },
+    generic_async_to_bitcoind(c, batchId, m.id, "getrawtransaction", QVariantList{ Util::ToHexFast(txHash), BTC::GetRawTransactionVerboseArg(verbose) },
         // use the default success func, which just echoes the bitcoind reply to the client
         BitcoinDSuccessFunc(),
         // error func, throw an RPCError
@@ -2306,7 +2484,7 @@ void Server::rpc_blockchain_transaction_get_confirmed_blockhash(Client *c, const
             throw RPCError("No confirmed transaction matching the requested hash was found");
         const auto & [blockHeight, blockHeader] = *optPair;
         QVariantMap ret{
-            { "block_hash", Util::ToHexFast(BTC::HashRev(blockHeader)) },
+            { "block_hash", Util::ToHexFast(BTC::HashBlockHeaderRev(blockHeader)) },
             { "block_height", blockHeight },
         };
         if (includeHeader) ret.insert("block_header", Util::ToHexFast(blockHeader));
@@ -2871,10 +3049,31 @@ QVariant ServerSSL::stats() const
 }
 void ServerSSL::incomingConnection(qintptr socketDescriptor)
 {
-    auto socket = createSocketFromDescriptorAndCheckLimits<QSslSocket>(socketDescriptor);
+    auto socket = createSocketFromDescriptor<QSslSocket>(socketDescriptor);
     if (!socket)
-        // Per-IP connection limit reached or low-level error. Fail. (Error was already logged)
+        // Low-level error creating the socket. Fail. (Error was already logged)
         return;
+
+    // Attach per-IP data (now that the real client address is known) and start the TLS handshake.
+    auto proceed = [this, socket] {
+        if (!attachPerIPDataAndCheckLimits(socket))
+            // Per-IP connection limit reached (or client already gone). Fail. (Already logged / socket deleted.)
+            return;
+        beginServerEncryption(socket);
+    };
+
+    if (!shouldReadProxyProtocol(socket)) {
+        // Fast path: no PROXY protocol -- attach and begin TLS immediately.
+        proceed();
+        return;
+    }
+    // PROXY protocol path: the header precedes the TLS ClientHello, so we must read/strip it off the raw (still
+    // unencrypted) socket before starting the TLS handshake.
+    readProxyProtocolThenProceed(socket, proceed);
+}
+
+void ServerSSL::beginServerEncryption(QSslSocket *socket)
+{
     socket->setSslConfiguration(sslConfiguration);
     const auto peerName = QStringLiteral("%1:%2").arg(socket->peerAddress().toString()).arg(socket->peerPort());
     if (socket->state() != QAbstractSocket::SocketState::ConnectedState || socket->isEncrypted()) {

@@ -29,6 +29,7 @@
 
 #include <QByteArray>
 #include <QHash>
+#include <QVariant>
 #include <QMetaType>
 #include <QString>
 
@@ -44,11 +45,35 @@
 /// this namespace is not specific to Bitcoin (Core), but applies to BCH as well.
 namespace BTC
 {
-    /// Used by the Storage and Controller subsystem to figure out what coin we are on (BCH vs BTC vs LTC)
-    enum class Coin { Unknown = 0, BCH, BTC, LTC };
+    /// Used by the Storage and Controller subsystem to figure out what coin we are on (BCH vs BTC vs LTC vs DIMI)
+    enum class Coin { Unknown = 0, BCH, BTC, LTC, DIMI, DGC, IL8P };
 
     QString coinToName(Coin);
     Coin coinFromName(const QString &);
+
+    /// Process-wide "current coin". Set once at startup (by the Controller) as soon as the coin is known, and read by
+    /// lower-level subsystems (e.g. BTC_Address) that need coin-specific behavior but must not depend on Controller.
+    /// Defaults to Coin::Unknown (which is treated like BCH for address purposes).
+    void SetCurrentCoin(Coin) noexcept;
+    Coin GetCurrentCoin() noexcept;
+
+    /// True iff the current coin's transactions carry an `nTime` field (Blackcoin-v13 / DIMI / Peercoin style).
+    /// Defined in CoinConfig.cpp / BTC.cpp; declared here so BTC.h's serialise/deserialise templates can branch
+    /// without taking a dependency on CoinConfig.h.
+    bool CurrentCoinHasTransactionTimestamp() noexcept;
+
+    /// Returns the SERIALIZE_TRANSACTION_* stream flags controlling transaction-nTime (de)serialization for
+    /// the current coin. For "era-based" coins (e.g. IL8P) whose tx-nTime presence is keyed on the block
+    /// header version, `objectIsBlock` must be true and `bytes`+`pos` must point at the start of a serialized
+    /// block so the header nVersion can be peeked; a standalone tx/header is treated as current-era (no nTime).
+    /// Declared here (defined in BTC.cpp) so the deserialise template below can call it. Returns 0 for coins
+    /// without transaction timestamps. See CoinConfig for the per-coin rule.
+    int TxTimestampStreamFlags(bool objectIsBlock, const QByteArray &bytes, int pos);
+
+    /// Returns the correct "verbose" argument for the getrawtransaction RPC. Per-coin (some daemons based on
+    /// Bitcoin Core 0.13 — e.g. Diminutivecoin — reject a JSON boolean here with "JSON value is not an integer
+    /// as expected", so we pass an integer (0/1)). Sourced from CoinConfig at runtime.
+    QVariant GetRawTransactionVerboseArg(bool verbose) noexcept;
 
     /// Tests
     namespace Tests {
@@ -74,6 +99,7 @@ namespace BTC
         int version = bitcoin::PROTOCOL_VERSION;
         if (allowSegWit) version |=  bitcoin::SERIALIZE_TRANSACTION_USE_WITNESS;
         if (allowMW) version |= bitcoin::SERIALIZE_TRANSACTION_USE_MWEB;
+        if (CurrentCoinHasTransactionTimestamp()) version |= bitcoin::SERIALIZE_TRANSACTION_USE_TIMESTAMP;
         bitcoin::GenericVectorWriter<QByteArray> vw(bitcoin::SER_NETWORK, version, buf, from_pos);
         thing.Serialize(vw);
         return buf;
@@ -93,12 +119,24 @@ namespace BTC
     /// (use the non-in-place specialization instead)
     requires (!std::is_same_v<std::remove_cvref_t<BitcoinObject>, bitcoin::CTransaction>)
     void Deserialize(BitcoinObject &thing, const QByteArray &bytes, int pos = 0, bool allowSegWit = false,
-                     bool allowMW = false, bool allowCashTokens = true, bool throwIfJunkAtEnd = false)
+                     bool allowMW = false, bool allowCashTokens = true, bool throwIfJunkAtEnd = false,
+                     int txTimestampFlagsOverride = -1)
     {
         int version = bitcoin::PROTOCOL_VERSION;
         if (allowSegWit) version |= bitcoin::SERIALIZE_TRANSACTION_USE_WITNESS;
         if (allowMW) version |= bitcoin::SERIALIZE_TRANSACTION_USE_MWEB;
         if (allowCashTokens) version |= bitcoin::SERIALIZE_TRANSACTION_USE_CASHTOKENS;
+        // Transaction-nTime (Peercoin/Blackcoin lineage) stream flags. Normally auto-detected: for a
+        // block we peek the header nVersion; a standalone tx is treated as current-era. Callers that
+        // deserialize a STANDALONE *historical* tx -- where the era can't be inferred from the tx alone
+        // (e.g. the txindex probe fetching an early tx) -- pass an explicit override (>= 0) computed
+        // from that tx's block header via TxTimestampStreamFlags(true, blockHeader, 0).
+        if (txTimestampFlagsOverride >= 0) {
+            version |= txTimestampFlagsOverride;
+        } else {
+            constexpr bool objectIsBlock = std::is_base_of_v<bitcoin::CBlock, std::remove_cvref_t<BitcoinObject>>;
+            version |= TxTimestampStreamFlags(objectIsBlock, bytes, pos);
+        }
         bitcoin::GenericVectorReader<QByteArray> vr(bitcoin::SER_NETWORK, version, bytes, pos);
         thing.Unserialize(vr);
         if (throwIfJunkAtEnd && !vr.empty())
@@ -160,6 +198,15 @@ namespace BTC
     /// Identical to the above except it returns the REVERSED hash (which is what bitcoind gives you via JSON RPC or
     /// when doing uint256.ToString()). That is, this hash is in big-endian byte order.
     extern QByteArray HashRev(const QByteArray &, bool once = false);
+
+    /// Computes the *block header* hash using the algorithm appropriate for the current coin (see GetCurrentCoin()):
+    /// the Tribus PoW hash for Diminutivecoin (DIMI), or double-SHA256 for all other coins. The input `header` must be
+    /// the raw serialized 80-byte block header. The result is 32 bytes in internal (little-endian) byte order.
+    /// IMPORTANT: this must be used (instead of Hash()) everywhere a *block* hash is computed from a header, since some
+    /// coins (DIMI) use a non-SHA256d block hash. Transaction hashes always remain double-SHA256.
+    extern QByteArray HashBlockHeader(const QByteArray &header);
+    /// Like HashBlockHeader() but returns the REVERSED (big-endian) hash, as used for display / JSON RPC.
+    extern QByteArray HashBlockHeaderRev(const QByteArray &header);
     /// sha256d of the concatenation of a and b. This is faster than but equivalent to doing: Hash(a + b, false).
     extern QByteArray HashTwo(const QByteArray &a, const QByteArray &b);
     /// Convenient alias for Hash(b, true)

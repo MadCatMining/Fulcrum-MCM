@@ -18,6 +18,7 @@
 //
 #include "PeerMgr.h"
 
+#include "CoinConfig.h"
 #include "Compat.h"
 #include "Options.h"
 #include "Servers.h"
@@ -88,8 +89,11 @@ void PeerMgr::startup()
     // setup this->coin flag -- note that assumption is that storage was aleady setup properly
     if (chain.isEmpty() || (this->coin = BTC::coinFromName(coinStr)) == BTC::Coin::Unknown)
         throw InternalError("PeerMgr cannot be constructed without a valid \"Coin\" and/or \"Chain\" in the database!");
-    const auto lcaseCoin = coinStr.trimmed().toLower();
-    const auto pathPrefix = QString(":resources/%1/").arg(lcaseCoin);
+    // Peer-resource directory comes from CoinConfig (e.g. ":resources/bch/"). Empty path = peering disabled for this
+    // coin; SrvMgr guards on this same field before constructing us, but throw here as a defensive backstop.
+    const auto pathPrefix = BTC::GetCoinConfig(this->coin).peerResourcePath;
+    if (pathPrefix.isEmpty())
+        throw InternalError(QString("PeerMgr cannot start: coin \"%1\" has no peer resource path configured").arg(coinStr));
     const QVector<BTC::Net> knownNets{{BTC::Net::TestNet, BTC::Net::TestNet4, BTC::Net::ScaleNet, BTC::Net::MainNet,
                                        BTC::Net::ChipNet}};
     if (const auto net = BTC::NetFromName(chain); !knownNets.contains(net))

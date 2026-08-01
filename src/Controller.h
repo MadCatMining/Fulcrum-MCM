@@ -21,6 +21,7 @@
 #include "BitcoinD.h"
 #include "BTC.h"
 #include "BlockProc.h"
+#include "CoinConfig.h"
 #include "Mixins.h"
 #include "Options.h"
 #include "Storage.h"
@@ -69,21 +70,20 @@ public:
     /// for debug printing when it receives new mempool tx's.
     static void printMempoolStatusToLog(size_t newSize, size_t numAddresses, double msec, bool useDebugLogger, bool force = false);
 
-    /// Thread-safe, lock-free, returns true for BTC and LTC
+    /// Thread-safe, lock-free. Per-coin behaviour comes from the CoinConfig registry (CoinConfig.cpp).
     bool isSegWitCoin() const {
-        auto const c = coinType.load(std::memory_order_relaxed);
-        return c == BTC::Coin::BTC || c == BTC::Coin::LTC;
+        return BTC::GetCoinConfig(coinType.load(std::memory_order_relaxed)).allowSegWit;
     }
-
-    /// Thread-safe, lock-free, returns true for LTC
-    bool isMimbleWimbleCoin() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::LTC; }
-
-    /// Thread-safe, lock-free, returns true for BCH. Note: also returns true for "Unknown" coins since we "prefer" BCH
-    /// if we happen to have a regression where the coin info is not propagated from BitcoinDMgr. This is to ensure
-    /// that on BCH, CashTokens always deserialize correctly.
+    bool isMimbleWimbleCoin() const {
+        return BTC::GetCoinConfig(coinType.load(std::memory_order_relaxed)).allowMimbleWimble;
+    }
+    bool isDIMI() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::DIMI; }
+    bool isDGC() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::DGC; }
+    bool isIL8P() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::IL8P; }
+    /// True iff this coin allows CashTokens during tx/block deser. Sourced from CoinConfig — the Unknown entry sets
+    /// allowCashTokens=true so a coin we forgot about still parses BCH-style blocks (matches prior behaviour).
     bool isBCHCoin() const {
-        const auto type = coinType.load(std::memory_order_relaxed);
-        return type == BTC::Coin::BCH || type == BTC::Coin::Unknown;
+        return BTC::GetCoinConfig(coinType.load(std::memory_order_relaxed)).allowCashTokens;
     }
 
     /// Type used internally by the putRpaIndex signal

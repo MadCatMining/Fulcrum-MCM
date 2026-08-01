@@ -18,6 +18,7 @@
 //
 #include "BTC.h"
 #include "BTC_Address.h"
+#include "CoinConfig.h"
 #include "Common.h"
 #include "Util.h"
 
@@ -47,56 +48,43 @@ namespace BTC
     inline Compat::qhuint qHash(BTC::Net n, Compat::qhuint seed = 0) noexcept { return ::qHash(uchar(n), seed); }
 
     namespace {
-        // Hash of Net -> [Hash of VerByte -> Kind]
-        const QHash<Net, QHash<quint8, Address::Kind> > netVerByteKindMap = {
-            { MainNet,      { {0, Address::P2PKH }, {5, Address::P2SH} } },
-            { TestNet,    { {111, Address::P2PKH }, {196, Address::P2SH} } },
-            { TestNet4,   { {111, Address::P2PKH }, {196, Address::P2SH} } },
-            { ScaleNet,   { {111, Address::P2PKH }, {196, Address::P2SH} } },
-            { ChipNet,    { {111, Address::P2PKH }, {196, Address::P2SH} } },
-            { RegTestNet, { {111, Address::P2PKH }, {196, Address::P2SH} } },
-        };
+        /// Returns the {p2pkh, p2sh} ver-byte pair for the current coin and the given Net (or {0,0} if Net::Invalid).
+        /// Ver-bytes are sourced from the per-coin CoinConfig — adding a new coin = one struct entry.
+        Base58VerBytes verBytesForNet(Net net) {
+            const auto &cfg = GetCoinConfig(GetCurrentCoin());
+            switch (net) {
+            case MainNet:    return cfg.mainnetVer;
+            case TestNet:
+            case TestNet4:
+            case ScaleNet:
+            case ChipNet:    return cfg.testnetVer;
+            case RegTestNet: return cfg.regtestVer;
+            case Invalid:    break;
+            }
+            return {0, 0};
+        }
+
         Byte verByteForNetAndKind(Net net, Address::Kind kind) {
             if (kind == Address::TOKEN_P2PKH) kind = Address::P2PKH; // hack to support TOKEN_P2PKH
             else if (kind == Address::TOKEN_P2SH) kind = Address::P2SH; // hack to support TOKEN_P2SH
-            if (const auto map = netVerByteKindMap.value(net); !map.isEmpty()) [[likely]] {
-                for (auto it = map.begin(); it != map.end(); ++it) {
-                    if (it.value() == kind)
-                        return it.key();
-                }
-            }
+            const auto vb = verBytesForNet(net);
+            if (kind == Address::P2PKH) return vb.p2pkh;
+            if (kind == Address::P2SH)  return vb.p2sh;
             return Address::InvalidVerByte;
         }
         Address::Kind kindForNetAndVerByte(Net net, Byte verByte) {
-            if (const auto map = netVerByteKindMap.value(net); !map.isEmpty()) [[likely]] {
-                for (auto it = map.begin(); it != map.end(); ++it) {
-                    if (it.key() == verByte)
-                        return it.value();
-                }
-            }
+            const auto vb = verBytesForNet(net);
+            if (verByte == vb.p2pkh) return Address::P2PKH;
+            if (verByte == vb.p2sh)  return Address::P2SH;
             return Address::Kind::Invalid;
         }
-        /// NB: This won't ever auto-detect regtest since it has the same verBytes as testnet (111 & 196).  Since
-        /// between the two choices, testnet is the much more likely network anybody using this software will be using,
-        /// we always return testnet if the verByte matches regtest and/or testnet.
+        /// NB: This won't ever auto-detect regtest since it has the same verBytes as testnet (111 & 196). Since between
+        /// the two choices, testnet is the much more likely network anybody using this software will be using, we
+        /// always return testnet if the verByte matches regtest and/or testnet.
         Net netForVerByte(Byte verByte) {
-            for (auto it = netVerByteKindMap.begin(); it != netVerByteKindMap.end(); ++it) {
-                const Net net = it.key();
-                if (net == RegTestNet)
-                    // don't auto-detect regtest net -- skip it.
-                    continue;
-                if (net == TestNet4)
-                    // don't auto-detect testnet4 for now -- skip it.
-                    continue;
-                if (net == ScaleNet)
-                    // don't auto-detect scalenet for now -- skip it.
-                    continue;
-                if (net == ChipNet)
-                    // don't auto-detect chipnet for now -- skip it.
-                    continue;
-                if (it.value().contains(verByte))
-                    return net;
-            }
+            const auto &cfg = GetCoinConfig(GetCurrentCoin());
+            if (verByte == cfg.mainnetVer.p2pkh || verByte == cfg.mainnetVer.p2sh) return MainNet;
+            if (verByte == cfg.testnetVer.p2pkh || verByte == cfg.testnetVer.p2sh) return TestNet;
             return Net::Invalid;
         }
     } // end anon namespace
@@ -282,8 +270,10 @@ namespace BTC
     QString Address::toLitecoinString() const
     {
         std::optional<Byte> verByteOverride;
-        if (_net == Net::MainNet && _kind == Kind::P2PKH)
-            verByteOverride = Byte{48}; // p2psh on mainnet is the only one that differs for litecoin
+        // Sourced from CoinConfig (Litecoin's mainnet P2PKH legacy-encoding override = 48).
+        const auto &ltc = GetCoinConfig(Coin::LTC);
+        if (ltc.litecoinLegacyP2PKHOverride && _net == Net::MainNet && _kind == Kind::P2PKH)
+            verByteOverride = Byte{ltc.litecoinLegacyP2PKHOverride};
         return toString(true, verByteOverride);
     }
 

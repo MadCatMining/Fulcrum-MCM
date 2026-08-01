@@ -17,7 +17,9 @@
 // <https://www.gnu.org/licenses/>.
 //
 #include "BTC.h"
+#include "CoinConfig.h"
 #include "Common.h"
+#include "PoWHash.h"
 #include "Util.h"
 
 #include "bitcoin/crypto/endian.h"
@@ -27,6 +29,7 @@
 #include <QMap>
 
 #include <algorithm>
+#include <atomic>
 #include <utility>
 
 namespace bitcoin
@@ -78,6 +81,61 @@ namespace BTC
     QByteArray HashRev(const QByteArray &b, bool once)
     {
         QByteArray ret = Hash(b, once);
+        std::reverse(ret.begin(), ret.end());
+        return ret;
+    }
+
+    namespace {
+        // The 80-byte block header layout is: [0,4) nVersion, [4,36) hashPrevBlock, ... . The genesis
+        // block is the unique block whose hashPrevBlock is all-zeros; we detect it purely by content so
+        // no height needs to be threaded through the many HashBlockHeader() call sites.
+        bool headerIsGenesis(const QByteArray &header) noexcept {
+            constexpr int kPrevOff = 4, kPrevLen = 32;
+            if (header.size() < kPrevOff + kPrevLen) return false;
+            const auto *p = reinterpret_cast<const unsigned char *>(header.constData()) + kPrevOff;
+            for (int i = 0; i < kPrevLen; ++i)
+                if (p[i] != 0) return false;
+            return true;
+        }
+    }
+
+    QByteArray HashBlockHeader(const QByteArray &header)
+    {
+        // Block-ID hash algorithm is selected per-coin in CoinConfig (default SHA256d).
+        const auto &cfg = GetCoinConfig(GetCurrentCoin());
+        auto algo = cfg.blockIdAlgo;
+        // Some hybrid PoW/PoS coins mine only the genesis with an exotic algo but use blockIdAlgo for
+        // every later (PoS) block. Only pay the genesis-detection cost when such an override exists.
+        if (cfg.genesisBlockIdAlgo && *cfg.genesisBlockIdAlgo != cfg.blockIdAlgo && headerIsGenesis(header))
+            algo = *cfg.genesisBlockIdAlgo;
+        if (algo == PoWHashAlgo::SHA256d) return Hash(header); // fast path: reuse existing CHash256 impl
+        return HashHeaderForAlgo(algo, header.constData(), static_cast<size_t>(header.size()));
+    }
+
+    int TxTimestampStreamFlags(bool objectIsBlock, const QByteArray &bytes, int pos)
+    {
+        const auto &cfg = GetCoinConfig(GetCurrentCoin());
+        if (!cfg.hasTransactionTimestamp) return 0;
+        if (!cfg.txTimestampMaxBlockVersion) {
+            // DIMI / Blackcoin-more: nTime only on nVersion==1 txs; the tx deserializer applies that gate.
+            return bitcoin::SERIALIZE_TRANSACTION_USE_TIMESTAMP;
+        }
+        // Era-based (IL8P): all txs carry nTime only while the block header version is old enough. We can
+        // only know that when deserializing a whole block (header nVersion is its first 4 bytes). A
+        // standalone tx/header is assumed to be current-era (post-switch) and thus carries no nTime.
+        if (objectIsBlock && bytes.size() - pos >= 4) {
+            const auto *p = reinterpret_cast<const unsigned char *>(bytes.constData()) + pos;
+            const int32_t blockVersion = int32_t(uint32_t(p[0]) | (uint32_t(p[1]) << 8)
+                                                 | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24));
+            if (blockVersion <= *cfg.txTimestampMaxBlockVersion)
+                return bitcoin::SERIALIZE_TRANSACTION_USE_TIMESTAMP | bitcoin::SERIALIZE_TRANSACTION_TIMESTAMP_ALLVERS;
+        }
+        return 0;
+    }
+
+    QByteArray HashBlockHeaderRev(const QByteArray &header)
+    {
+        QByteArray ret = HashBlockHeader(header);
         std::reverse(ret.begin(), ret.end());
         return ret;
     }
@@ -138,7 +196,7 @@ namespace BTC
             if (err) *err = QString("Header verification failed for header at height %1: failed to deserialize").arg(height);
             return false;
         }
-        if (!prev.isEmpty() && Hash(prev) != QByteArray::fromRawData(reinterpret_cast<const char *>(curHdr.hashPrevBlock.begin()), int(curHdr.hashPrevBlock.width())) ) {
+        if (!prev.isEmpty() && HashBlockHeader(prev) != QByteArray::fromRawData(reinterpret_cast<const char *>(curHdr.hashPrevBlock.begin()), int(curHdr.hashPrevBlock.width())) ) {
             if (err) *err = QString("Header %1 'hashPrevBlock' does not match the contents of the previous block").arg(height);
             return false;
         }
@@ -188,23 +246,28 @@ namespace BTC
         return nameNetMap.value(name, Net::Invalid /* default if not found */);
     }
 
-    namespace { const QString coinNameBCH{"BCH"}, coinNameBTC{"BTC"}, coinNameLTC{"LTC"}; }
     QString coinToName(Coin c) {
-        QString ret; // for NRVO
-        switch (c) {
-        case Coin::BCH: ret = coinNameBCH; break;
-        case Coin::BTC: ret = coinNameBTC; break;
-        case Coin::LTC: ret = coinNameLTC; break;
-        case Coin::Unknown: break;
-        }
-        return ret;
+        if (c == Coin::Unknown) return QString(); // historical behaviour: empty (not "Unknown")
+        return GetCoinConfig(c).name;
     }
     Coin coinFromName(const QString &s) {
-        if (s == coinNameBCH) return Coin::BCH;
-        if (s == coinNameBTC) return Coin::BTC;
-        if (s == coinNameLTC) return Coin::LTC;
+        if (const auto *cc = GetCoinConfigByName(s)) return cc->coin;
         return Coin::Unknown;
     }
+
+    bool CurrentCoinHasTransactionTimestamp() noexcept {
+        return GetCoinConfig(GetCurrentCoin()).hasTransactionTimestamp;
+    }
+
+    QVariant GetRawTransactionVerboseArg(bool verbose) noexcept {
+        if (GetCoinConfig(GetCurrentCoin()).getRawTxVerboseAsInt)
+            return QVariant(int(verbose));
+        return QVariant(verbose);
+    }
+
+    namespace { std::atomic<Coin> g_currentCoin{Coin::Unknown}; }
+    void SetCurrentCoin(Coin c) noexcept { g_currentCoin.store(c, std::memory_order_relaxed); }
+    Coin GetCurrentCoin() noexcept { return g_currentCoin.load(std::memory_order_relaxed); }
 
     bitcoin::token::OutputDataPtr DeserializeTokenDataWithPrefix(const QByteArray &ba, int pos) {
         bitcoin::token::OutputDataPtr ret;

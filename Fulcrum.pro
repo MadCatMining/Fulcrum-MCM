@@ -17,6 +17,33 @@
 # <https://www.gnu.org/licenses/>.
 #
 
+##########################
+# Make use of compiled SDK (Alpine fulcrum-sdk builds). Guarded by exists() so this whole
+# block is completely inert for anyone who doesn't have the SDK installed -- a plain clone +
+# qmake still works and falls back to the normal rocksdb/zmq/jemalloc detection below.
+#
+SDK_PREFIX = /opt/fulcrum-sdk
+exists($$SDK_PREFIX) {
+    INCLUDEPATH += $$SDK_PREFIX/include
+    INCLUDEPATH += $$SDK_PREFIX/plugins
+
+    LIBS += -L$$SDK_PREFIX/lib
+    LIBS += -L$$SDK_PREFIX/plugins
+
+    LIBS += -lrocksdb
+    LIBS += -lz
+    LIBS += -lbz2
+    LIBS += -lsnappy
+    LIBS += -llz4
+    LIBS += -lzstd
+    LIBS += -pthread
+    LIBS += -ljemalloc
+
+    message("Using Fulcrum SDK at $$SDK_PREFIX")
+}
+##########################
+
+
 # print CLI overrides to stdout immediately
 !isEmpty(LIBS) {
     message("CLI overrides: LIBS=$$LIBS")
@@ -347,6 +374,8 @@ SOURCES += \
     BTC.cpp \
     BTC_Address.cpp \
     BitcoinD.cpp \
+    CoinConfig.cpp \
+    PoWHash.cpp \
     BitcoinD_RPCInfo.cpp \
     BlockProc.cpp \
     CityHash.cpp \
@@ -368,6 +397,7 @@ SOURCES += \
     Options.cpp \
     PackedNumView.cpp \
     PeerMgr.cpp \
+    ProxyProtocol.cpp \
     RollingBloomFilter.cpp \
     Rpa.cpp \
     RPC.cpp \
@@ -398,6 +428,8 @@ HEADERS += \
     BTC.h \
     BTC_Address.h \
     BitcoinD.h \
+    CoinConfig.h \
+    PoWHash.h \
     BitcoinD_RPCInfo.h \
     BlockProc.h \
     BlockProcTypes.h \
@@ -420,6 +452,7 @@ HEADERS += \
     Options.h \
     PackedNumView.h \
     PeerMgr.h \
+    ProxyProtocol.h \
     RollingBloomFilter.h \
     Rpa.h \
     RPC.h \
@@ -480,6 +513,11 @@ SOURCES += \
     bitcoin/crypto/sha256.cpp \
     bitcoin/crypto/sha256_sse4.cpp \
     bitcoin/crypto/sha512.cpp \
+    bitcoin/crypto/scrypt/scrypt.cpp \
+    bitcoin/crypto/tribus/tribus.cpp \
+    bitcoin/crypto/tribus/sph_jh.c \
+    bitcoin/crypto/tribus/sph_keccak.c \
+    bitcoin/crypto/tribus/sph_echo.c \
     bitcoin/hash.cpp \
     bitcoin/interpreter.cpp \
     bitcoin/pubkey.cpp \
@@ -514,6 +552,12 @@ HEADERS += \
     bitcoin/crypto/sha1.h \
     bitcoin/crypto/sha256.h \
     bitcoin/crypto/sha512.h \
+    bitcoin/crypto/scrypt/scrypt.h \
+    bitcoin/crypto/tribus/tribus.h \
+    bitcoin/crypto/tribus/sph_types.h \
+    bitcoin/crypto/tribus/sph_jh.h \
+    bitcoin/crypto/tribus/sph_keccak.h \
+    bitcoin/crypto/tribus/sph_echo.h \
     bitcoin/hash.h \
     bitcoin/heapoptional.h \
     bitcoin/interpreter.h \

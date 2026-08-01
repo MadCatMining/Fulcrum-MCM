@@ -418,7 +418,7 @@ void SynchMempoolTask::doDLNextTx()
         assert(bool(tx));
         const auto hashHex = Util::ToHexFast(tx->hash);
         txsWaitingForResponse.emplace(tx->hash, tx);
-        submitRequest("getrawtransaction", {hashHex, false}, [this, hashHex, tx, t0 = Tic()](const RPC::Message & resp){
+        submitRequest("getrawtransaction", {hashHex, BTC::GetRawTransactionVerboseArg(false)}, [this, hashHex, tx, t0 = Tic()](const RPC::Message & resp){
             if (TRACE)
                 DebugM(resp.method, ": got reply for ", QString::fromLatin1(hashHex).left(8), " in ", t0.msecStr(), " msec",
                        ", needDL: ", txsNeedingDownload.size(), ", waitingForResp: ", txsWaitingForResponse.size());
