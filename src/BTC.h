@@ -46,7 +46,7 @@
 namespace BTC
 {
     /// Used by the Storage and Controller subsystem to figure out what coin we are on (BCH vs BTC vs LTC vs DIMI)
-    enum class Coin { Unknown = 0, BCH, BTC, LTC, DIMI, DGC, IL8P };
+    enum class Coin { Unknown = 0, BCH, BTC, LTC, DIMI, DGC, IL8P, LYNX };
 
     QString coinToName(Coin);
     Coin coinFromName(const QString &);

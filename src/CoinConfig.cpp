@@ -164,7 +164,7 @@ CoinConfig makeLYNX() {
     c.name = QStringLiteral("IL8P");
     c.displayName = QStringLiteral("Lynx core");
     c.subversionPrefixes = {QStringLiteral("/Lynx Core:")};
-    c.mainnetVer = {0x21, 0x55};
+    c.mainnetVer = {0x2d, 0x16};
     c.testnetVer = {111, 196};
     c.regtestVer = {111, 196};
     c.hasTransactionTimestamp = true; // POS

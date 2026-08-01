@@ -80,6 +80,7 @@ public:
     bool isDIMI() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::DIMI; }
     bool isDGC() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::DGC; }
     bool isIL8P() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::IL8P; }
+    bool isLYNX() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::LYNX; }
     /// True iff this coin allows CashTokens during tx/block deser. Sourced from CoinConfig — the Unknown entry sets
     /// allowCashTokens=true so a coin we forgot about still parses BCH-style blocks (matches prior behaviour).
     bool isBCHCoin() const {

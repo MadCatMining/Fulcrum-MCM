@@ -119,7 +119,7 @@ struct CoinConfig {
 /// Always-non-null lookup: returns the Unknown entry as a safe default for unrecognised coins.
 const CoinConfig & GetCoinConfig(Coin) noexcept;
 
-/// Lookup by storage-name ("BCH" / "BTC" / "LTC" / "DIMI" / "DGC" ). Returns nullptr if no match.
+/// Lookup by storage-name ("BCH" / "BTC" / "LTC" / "DIMI" / "DGC" / "IL8P" / "LYNX" ). Returns nullptr if no match.
 const CoinConfig * GetCoinConfigByName(const QString &name) noexcept;
 
 /// First registered coin whose `subversionPrefixes` contains a prefix the given subversion starts with.
