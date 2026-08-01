@@ -56,7 +56,10 @@ struct InternalError : Exception { using Exception::Exception; ~InternalError() 
 struct BadArgs : Exception { using Exception::Exception; ~BadArgs() override; };
 
 #define APPNAME "Fulcrum-MCM"
-#define VERSION "2.1.1"
+// Fulcrum-MCM maintains its own independent version line (see RELEASE-NOTES.md); VERSION is this
+// fork's version, and UPSTREAM_BASE_VERSION records the upstream Fulcrum release it was forked from.
+#define VERSION "1.0.0"
+#define UPSTREAM_BASE_VERSION "2.1.1"
 #ifdef QT_DEBUG
 inline constexpr bool isReleaseBuild() { return false; }
 #else

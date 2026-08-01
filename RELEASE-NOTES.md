@@ -1,10 +1,15 @@
-# Fulcrum (multi-altcoin fork) — Release Notes
+# Fulcrum-MCM — Release Notes
 
-A fork of [Fulcrum](https://github.com/cculianu/Fulcrum), the fast & nimble Electrum server,
-extended to serve a range of **scrypt / PoS / Blackcoin-lineage altcoins** in addition to the
-upstream BCH / BTC / LTC support — without touching the core indexing engine.
+**Fulcrum-MCM** is a fork of [Fulcrum](https://github.com/cculianu/Fulcrum), the fast & nimble
+Electrum server, extended to serve a range of **scrypt / PoS / Blackcoin-lineage altcoins** in
+addition to the upstream BCH / BTC / LTC support — without touching the core indexing engine.
 
-Based on upstream **v2.1.1**.
+**Forked from upstream Fulcrum `v2.1.1`.** Fulcrum-MCM keeps its **own independent version line**,
+starting at **`1.0.0`**: the numbering reflects *this fork's* changes (new functionality → minor,
+fixes → patch, breaking changes → major), while the upstream release it derives from is recorded
+here, in `src/Common.h` (`UPSTREAM_BASE_VERSION`), and in the binary's `--version` output
+(`Forked from Fulcrum v2.1.1`). Servers advertise themselves to Electrum clients as
+`Fulcrum-MCM <version>`.
 
 ## Summary
 

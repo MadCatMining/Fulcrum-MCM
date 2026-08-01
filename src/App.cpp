@@ -1971,6 +1971,7 @@ QString App::extendedVersionString(bool justLibs)
 
     if (!justLibs) {
         ts << applicationName() << " " << applicationVersion() << "\n";
+        ts << "Forked from Fulcrum v" << UPSTREAM_BASE_VERSION << "\n";
         ts << "Protocol: version min: " << ServerMisc::MinProtocolVersion.toString()
            << ", version max: " << ServerMisc::MaxProtocolVersion.toString() << "\n";
         if (auto compiler = getCompiler(); !compiler.isEmpty())
