@@ -1,11 +1,14 @@
-# ![Image FulcrumLogo](https://raw.githubusercontent.com/cculianu/Fulcrum-art/master/F-circle2_grn_64.png) Fulcrum
+# ![Image FulcrumLogo](https://raw.githubusercontent.com/cculianu/Fulcrum-art/master/F-circle2_grn_64.png) Fulcrum-MCM
 
 [![Docker Build](https://github.com/cculianu/Fulcrum/actions/workflows/publish.yml/badge.svg)](https://github.com/cculianu/Fulcrum/actions/workflows/publish.yml)
 [![Copr build status](https://copr.fedorainfracloud.org/coprs/jonny/BitcoinCash/package/fulcrum/status_image/last_build.png)](https://copr.fedorainfracloud.org/coprs/jonny/BitcoinCash/package/fulcrum/)
 
-A fast & nimble SPV server for Bitcoin Cash, Bitcoin BTC, and Litecoin. 
+A fast & nimble SPV server for Bitcoin Cash, Bitcoin (BTC), Litecoin, and a growing range of additional Bitcoin-derived altcoins.
 
-For more information, visit [The Official Fulcrum Website™️](https://fulcrumserver.org/).
+> ### ⑂ This is a fork
+> **Fulcrum-MCM** is a community fork of the original [**Fulcrum** by Calin Culianu](https://github.com/cculianu/Fulcrum). It preserves full upstream functionality and adds a **configuration-driven, multi-coin framework**: a single codebase can serve many Bitcoin-derived altcoins — including coins that use alternative block-ID hash algorithms, Proof-of-Stake, and hybrid PoW-genesis/PoS chains — by adding one declarative config entry instead of modifying the core indexing engine.
+>
+> All credit for Fulcrum itself belongs to Calin Culianu. Please consider supporting the upstream project (see [Donations](#donations)). For upstream documentation and pre-built releases, visit [The Official Fulcrum Website™️](https://fulcrumserver.org/) and the [original repository](https://github.com/cculianu/Fulcrum).
 
 #### Copyright
 (C) 2019-2025 Calin Culianu <calin.culianu@gmail.com>
@@ -20,7 +23,8 @@ GPLv3. See the included `LICENSE.txt` file or [visit gnu.org and read the licens
 - *Fast:* Written in 100% modern `C++20` using multi-threaded and asynchronous programming techniques.
 - *A drop-in replacement for ElectrumX:* Fulcrum is 100% protocol-level compatible with the [Electrum Cash 1.6 protocol](https://electrum-cash-protocol.readthedocs.io/en/latest/). Existing server admins should feel right at home with this software since installation and management of it is nearly identical to an ElectrumX server.
 - *Cross-platform:* While this codebase was mainly developed and tested on MacOS, Windows and Linux, it should theoretically work on any modern OS (such as *BSD) that has Qt5 or Qt6 Networking available.
-- ***NEW!*** *Triple-coin:* Supports BCH, BTC and LTC.
+- *Multi-coin:* Full upstream support for Bitcoin Cash, Bitcoin (BTC), and Litecoin.
+- ***NEW (fork):*** *Pluggable altcoin framework:* A declarative per-coin configuration layer plus a pluggable block-ID hashing abstraction let this fork serve additional Bitcoin-derived altcoins — including scrypt-mined, Proof-of-Stake, and hybrid PoW-genesis/PoS chains — each added as a single config entry rather than by rewriting core logic. Handles per-coin address formats, transaction/block serialization quirks (e.g. per-transaction timestamps), and daemon RPC differences. It can also run behind a reverse proxy via HAProxy PROXY-protocol support.
 
 ### Requirements
 
@@ -228,25 +232,18 @@ Everything should just work (I use MacOS as my dev machine).
 
 ### Donations
 
-#### Sure!  Send **BCH** here:
+#### Support the original author (upstream Fulcrum)
+
+All of the core engineering behind Fulcrum was done by **Calin Culianu**. If this software is useful to you, please consider supporting the original creator. This is the creator's own **BCH** address (from the [original repository](https://github.com/cculianu/Fulcrum)):
 
 **`bitcoincash:qphax4s4n9h60jxj2fkrjs35w2tvgd4wzvf52cgtzc`**
 
-[![bitcoincash:qphax4s4n9h60jxj2fkrjs35w2tvgd4wzvf52cgtzc](https://raw.githubusercontent.com/cculianu/DonateSpareChange/master/donate.png)](bitcoincash:qphax4s4n9h60jxj2fkrjs35w2tvgd4wzvf52cgtzc)
+#### Support this fork (Fulcrum-MCM)
 
-### Or, for anonymity you can donate to this **BCH RPA address**: 
+If you'd like to support the maintenance of this fork and its multi-coin work, donations are gratefully accepted:
 
-**`paycode:qygqyce24f7n6q2u36r8t332z5426ul78v7z0ynl6v9wlmk9tt28adksqgc0fzge8fk6ux8cj9tjvp8mkakvfzkgwqzj5h4n9tnfcpscsn7wxqqqqqqqzzmxze04`**
-
-[![paycode:qygqyce24f7n6q2u36r8t332z5426ul78v7z0ynl6v9wlmk9tt28adksqgc0fzge8fk6ux8cj9tjvp8mkakvfzkgwqzj5h4n9tnfcpscsn7wxqqqqqqqzzmxze04](https://c3-soft.com/downloads/Bitcoin/imgs/fulcrum_donation_paycode_2.png)](paycode:qygqyce24f7n6q2u36r8t332z5426ul78v7z0ynl6v9wlmk9tt28adksqgc0fzge8fk6ux8cj9tjvp8mkakvfzkgwqzj5h4n9tnfcpscsn7wxqqqqqqqzzmxze04)
-
-### You may also send **BTC**:
-
-This is the BTC-equivalent of the above BCH address, which is: **`1BCHBCH6TXBaXyc5HReLBm1sNytBF2kkPD`**
-[![1BCHBCH6TXBaXyc5HReLBm1sNytBF2kkPD](https://c3-soft.com/downloads/Bitcoin/imgs/btc_address_qrcode_1.png)](1BCHBCH6TXBaXyc5HReLBm1sNytBF2kkPD)
-
----
-
-### Sponsors
-
-![General Protocols](https://c3-soft.com/imgs/general-protocols.png)
+| Coin | Address | Scan |
+|------|---------|:----:|
+| **Bitcoin Cash (BCH)** | `bitcoincash:qpe8pswkh33x0arnxg47emh8ggj95rmur5cvjw5g9r` | ![BCH donation QR](contrib/donation/bch.png) |
+| **Litecoin (LTC)** | `LbZeAY2u2DkM1i21Q4EkECi7dZvAg6ek7d` | ![LTC donation QR](contrib/donation/ltc.png) |
+| **Bitcoin (BTC)** | `1MtRBAvHfpCxuXMWypStBtxpkw2t1wagSv` | ![BTC donation QR](contrib/donation/btc.png) |
