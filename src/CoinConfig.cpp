@@ -161,7 +161,7 @@ CoinConfig makeIL8P() {
 CoinConfig makeLYNX() {
     CoinConfig c;
     c.coin = Coin::LYNX;
-    c.name = QStringLiteral("IL8P");
+    c.name = QStringLiteral("LYNX");
     c.displayName = QStringLiteral("Lynx core");
     c.subversionPrefixes = {QStringLiteral("/Lynx Core:")};
     c.mainnetVer = {0x2d, 0x16};
