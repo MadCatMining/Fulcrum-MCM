@@ -13,7 +13,7 @@
 > document.
 >
 > Coins currently in the registry: **BCH, BTC, LTC, DIMI** (Diminutivecoin, Tribus),
-> **DGC** (Digitalcoin), **IL8P** (Infiniloop, scrypt). Vendored block-ID hashes:
+> **DGC** (Digitalcoin), **IL8P** (Infiniloop, scrypt), **LYNX** (Lynx core, scrypt-genesis). Vendored block-ID hashes:
 > **SHA256d, Tribus, Scrypt** (≈35 more names are reserved in the enum and throw until
 > their sources are vendored). Three mechanisms added for the trickier PoS/altcoin
 > formats, all driven from `CoinConfig` (details in § 9):
