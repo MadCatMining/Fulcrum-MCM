@@ -52,4 +52,9 @@ namespace ProxyProtocol {
     /// incoming bytes, up to kMaxHeaderLen). Does not modify the socket. See `Status` for the possible outcomes.
     Status parse(const QByteArray & buf, Result & out);
 
+    /// Cheap best-effort signature check: does `buf` begin with a PROXY protocol v1 ("PROXY") or v2 (binary)
+    /// signature? For diagnostics only (e.g. warning when a header arrives on a connection we are not configured
+    /// to consume it on). This is NOT a parser -- use parse() to actually validate/consume a header.
+    bool looksLikeHeader(const QByteArray & buf);
+
 } // namespace ProxyProtocol

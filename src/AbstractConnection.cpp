@@ -23,6 +23,7 @@
 #include <QSslSocket>
 #include <QHostAddress>
 #include <QNetworkProxy>
+#include <QTimer>
 
 #include <algorithm>
 #include <cassert>
@@ -218,6 +219,15 @@ void AbstractConnection::on_connected()
     socket->setReadBufferSize(MAX_BUFFER); // ensure memory exhaustion from peer can't happen in case we're too busy to read -- NB: 0 means unlimited
     connectedConns.push_back(connect(this, &AbstractConnection::send, this, &AbstractConnection::do_write));
     connectedConns.push_back(connect(socket, &QTcpSocket::readyRead, this, &AbstractConnection::slot_on_readyRead));
+    // Robustness: readyRead is only emitted for bytes that arrive *after* the connect() above. If data was
+    // already buffered before this point -- e.g. a client's first request that arrived in the same TCP segment as
+    // a PROXY-protocol header we stripped off on the accept path -- Qt will not re-emit readyRead for it, which
+    // would strand that request until the peer happens to send more. Kick a (deferred) read so any already-buffered
+    // data is processed. Deferred via singleShot(0) to avoid re-entrancy during construction/handshake; a no-op
+    // when nothing is buffered. Fixes flaky first-request delivery for plain-TCP clients behind a PROXY-protocol
+    // reverse proxy (SSL was unaffected because the TLS handshake drains the buffer before app data arrives).
+    if (socket && socket->bytesAvailable() > 0)
+        QTimer::singleShot(0, this, [this]{ slot_on_readyRead(); });
     connectedConns.push_back(connect(socket, &QTcpSocket::bytesWritten, this, &AbstractConnection::on_bytesWritten));
     connectedConns.push_back(
         connect(socket, &QAbstractSocket::disconnected, this, [this]{

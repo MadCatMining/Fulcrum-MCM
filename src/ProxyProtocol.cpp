@@ -161,4 +161,13 @@ Status parse(const QByteArray & buf, Result & out) {
     return Status::Absent;
 }
 
+bool looksLikeHeader(const QByteArray & buf) {
+    // Best-effort signature check for diagnostics only (see header). v1 = ASCII "PROXY"; v2 = 12-byte binary sig.
+    if (buf.size() >= int(sizeof kV1Sig) && std::memcmp(buf.constData(), kV1Sig, sizeof kV1Sig) == 0)
+        return true;
+    if (buf.size() >= int(sizeof kV2Sig) && std::memcmp(buf.constData(), kV2Sig, sizeof kV2Sig) == 0)
+        return true;
+    return false;
+}
+
 } // namespace ProxyProtocol

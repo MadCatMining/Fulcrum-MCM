@@ -16,6 +16,7 @@
 // along with this program (see LICENSE.txt).  If not, see
 // <https://www.gnu.org/licenses/>.
 //
+#include "ProxyProtocol.h"
 #include "RPC.h"
 #include "Util.h"
 #include "WebSocket.h"
@@ -495,6 +496,16 @@ namespace RPC {
         } catch (const BatchLimitExceeded & e) {
             error.emplace(Code_App_LimitExceeded, "Batch limit exceeded");
         } catch (const Json::ParseError & e) {
+            // Diagnostic: a very common misconfiguration behind a reverse proxy is that the proxy prepends a
+            // PROXY-protocol header but Fulcrum is not set to consume it from this peer (proxy_protocol disabled,
+            // or the proxy's address is not in proxy_protocol_from). The header bytes then reach the JSON parser
+            // and fail here. Detect that and log an actionable warning instead of a bare parse error. (Only fires
+            // for messages whose first bytes are a PROXY signature -- normal JSON/batches begin with '{'/'['.)
+            if (ProxyProtocol::looksLikeHeader(json))
+                Warning() << prettyName() << ": received what looks like a PROXY-protocol header, but it was not"
+                          << " consumed -- proxy_protocol is disabled or this proxy is not listed in"
+                          << " proxy_protocol_from. Enable proxy_protocol and add the proxy's address to"
+                          << " proxy_protocol_from, or disable PROXY protocol on the reverse proxy for this port.";
             error.emplace(Code_ParseError, e.what());
         } catch (const InvalidRequest & e) {
             error.emplace(Code_InvalidRequest, "Invalid request");
