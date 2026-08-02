@@ -1,4 +1,8 @@
-# Deploying Fulcrum (with Diminutivecoin support) on Debian
+# Deploying Fulcrum-MCM (with Diminutivecoin support) on Debian
+
+> **Version:** this guide targets **Fulcrum-MCM `v1.0.0`** (forked from upstream Fulcrum `v2.1.1`).
+> The build produces a binary named **`Fulcrum-MCM`**; `./Fulcrum-MCM --version` prints
+> `Fulcrum-MCM 1.0.0` and `Forked from Fulcrum v2.1.1`.
 
 > **What's new in this fork**
 > Per-coin behaviour has been refactored into a single declarative table
@@ -39,8 +43,8 @@ Debian host, e.g.:
 
 ```bash
 # from this Fedora machine:
-rsync -a --exclude build --exclude build-test /home/rob/Public/Fulcrum/ \
-      user@debian-host:~/Fulcrum/
+rsync -a --exclude build --exclude build-test /home/rob/Public/Fulcrum-MCM/ \
+      user@debian-host:~/Fulcrum-MCM/
 ```
 
 (Or commit the changes to a branch and `git clone` it on the Debian host.)
@@ -66,16 +70,18 @@ sudo apt install -y build-essential qt6-base-dev qt6-base-dev-tools \
 ## 3. Build
 
 ```bash
-cd ~/Fulcrum
+cd ~/Fulcrum-MCM
 mkdir -p build && cd build
 qmake6 ../Fulcrum.pro
 make -j"$(nproc)"
 ```
 
-The binary is `~/Fulcrum/build/Fulcrum`. Verify:
+The binary is `~/Fulcrum-MCM/build/Fulcrum-MCM`. Verify:
 
 ```bash
 ./Fulcrum-MCM --version
+# -> Fulcrum-MCM 1.0.0 (Release <commit>)
+#    Forked from Fulcrum v2.1.1
 ```
 
 ## 4. Runtime dependencies (if you build on one Debian box and run on another)
@@ -142,7 +148,7 @@ mkdir -p ~/fulcrum-db
 ## 7. Run
 
 ```bash
-cd ~/Fulcrum/build
+cd ~/Fulcrum-MCM/build
 ./Fulcrum-MCM ~/fulcrum.conf
 ```
 
@@ -162,7 +168,7 @@ Works with the unit's security hardening (`ProtectHome=true`). Put the binary,
 config and data in system paths:
 
 ```bash
-sudo install -m755 ~/Fulcrum/build/Fulcrum-MCM /usr/local/bin/Fulcrum-MCM
+sudo install -m755 ~/Fulcrum-MCM/build/Fulcrum-MCM /usr/local/bin/Fulcrum-MCM
 sudo useradd --system --no-create-home --shell /usr/sbin/nologin fulcrum
 sudo install -d -o fulcrum -g fulcrum /var/lib/fulcrum-diminutivecoin
 sudo install -m640 -o fulcrum -g fulcrum ~/fulcrum.conf /etc/fulcrum-diminutivecoin.conf
@@ -185,7 +191,7 @@ Quicker, but relax one hardening option (home is otherwise blocked):
 ```
 User=YOUR_USER
 Group=YOUR_USER
-ExecStart=/home/YOUR_USER/Fulcrum/build/Fulcrum-MCM /home/YOUR_USER/fulcrum.conf
+ExecStart=/home/YOUR_USER/Fulcrum-MCM/build/Fulcrum-MCM /home/YOUR_USER/fulcrum.conf
 ProtectHome=false
 ReadWritePaths=/home/YOUR_USER/fulcrum-db
 ```
@@ -333,7 +339,7 @@ have no public Electrum peer list.
 ### Step 5 — rebuild & run
 
 ```bash
-cd ~/Fulcrum/build
+cd ~/Fulcrum-MCM/build
 qmake6 ../Fulcrum.pro       # only needed if you touched .pro
 make -j"$(nproc)"
 ```
