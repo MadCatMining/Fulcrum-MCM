@@ -20,6 +20,17 @@ There are two ways to do it: the **installer script** (recommended) or the **man
 
 ## Option A — the installer script (recommended)
 
+**One-liner** (interactive — keeps your terminal for the prompts):
+```bash
+sudo bash <(curl -fsSL https://raw.githubusercontent.com/MadCatMining/Fulcrum-MCM/master/contrib/install/install-fulcrum-mcm.sh)
+```
+
+> ⚠️ Do **not** use `curl … | sudo bash` for the interactive install — the pipe becomes the script's
+> stdin, so the prompts can't read your answers. Use the `<(…)` process-substitution form above, or
+> download-then-run below. (Piping **is** fine for `--unattended`, since there are no prompts — see
+> [Unattended](#unattended--automation).)
+
+Or download, review, then run:
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/MadCatMining/Fulcrum-MCM/master/contrib/install/install-fulcrum-mcm.sh
 sudo bash install-fulcrum-mcm.sh
@@ -86,6 +97,12 @@ sudo FULCRUM_COIN_NAME=Diminutivecoin FULCRUM_TICKER=DIMI \
 The LE hostname is auto-derived from `FULCRUM_CERT` above (no `FULCRUM_LE_NAME` needed). For a
 non-Let's-Encrypt cert, no renewal hook is written; to skip it for an LE cert too, set
 `FULCRUM_LE_HOOK=false`.
+
+Unattended has no prompts, so you can pipe it (export the vars first, `sudo -E` to keep them):
+```bash
+export FULCRUM_TICKER=DIMI FULCRUM_RPC_PORT=49588 FULCRUM_RPC_USER=username FULCRUM_RPC_PASS='userpassword' FULCRUM_START=yes
+curl -fsSL https://raw.githubusercontent.com/MadCatMining/Fulcrum-MCM/master/contrib/install/install-fulcrum-mcm.sh | sudo -E bash -s -- --unattended
+```
 
 ---
 
