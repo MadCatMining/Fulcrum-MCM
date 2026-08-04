@@ -100,8 +100,10 @@ if [ "$UNATTENDED" = 1 ]; then
     [ -n "$RPC_PORT" ]   || die "unattended: FULCRUM_RPC_PORT is required"
     [ -n "$RPC_USER" ]   || die "unattended: FULCRUM_RPC_USER is required"
     [ -n "$RPC_PASS" ]   || die "unattended: FULCRUM_RPC_PASS is required"
-    if [ -n "$PORT_SSL$PORT_WSS" ] && { [ -z "$CERT_SRC" ] || [ -z "$KEY_SRC" ]; }; then
-        die "unattended: ssl/wss requested but FULCRUM_CERT and FULCRUM_KEY are not both set"
+    if [ -n "$PORT_SSL$PORT_WSS" ]; then
+        { [ -n "$CERT_SRC" ] && [ -n "$KEY_SRC" ]; } || die "unattended: ssl/wss requested but FULCRUM_CERT and FULCRUM_KEY are not both set"
+        [ -f "$CERT_SRC" ] || die "unattended: FULCRUM_CERT is not a readable file: $CERT_SRC (point at fullchain.pem, NOT the directory)"
+        [ -f "$KEY_SRC" ]  || die "unattended: FULCRUM_KEY is not a readable file: $KEY_SRC (point at privkey.pem)"
     fi
     # LE renewal hook: only for Let's Encrypt certs. Auto-derive live/<name> from the cert path unless
     # FULCRUM_LE_NAME overrides it; set FULCRUM_LE_HOOK=false to skip (e.g. other CA / self-signed).
@@ -136,8 +138,8 @@ else
         if [ -z "$CERT_SRC" ] || [ -z "$KEY_SRC" ]; then
             c_y "  No cert/key given → disabling ssl and wss."; PORT_SSL=""; PORT_WSS=""
         else
-            [ -r "$CERT_SRC" ] || c_y "  WARNING: $CERT_SRC not readable right now (put it in place before starting)."
-            [ -r "$KEY_SRC" ]  || c_y "  WARNING: $KEY_SRC not readable right now."
+            [ -f "$CERT_SRC" ] || c_y "  WARNING: $CERT_SRC is not a readable FILE — give the fullchain.pem file, NOT the directory."
+            [ -f "$KEY_SRC" ]  || c_y "  WARNING: $KEY_SRC is not a readable FILE — give the privkey.pem file."
             # A renewal hook only makes sense for Let's Encrypt; detect an LE source to pre-answer.
             if [[ "$CERT_SRC" == */letsencrypt/live/*/* ]]; then
                 LE_NAME="$(printf '%s' "$CERT_SRC" | sed -E 's#.*/letsencrypt/live/([^/]+)/.*#\1#')"
@@ -232,13 +234,16 @@ c_g "  data dir: $DB_DIR"
 # ---- copy certs into a fulcrum-owned dir (stable perms; survives LE renewals) -------------------
 if [ -n "$CERT_SRC" ]; then
     install -d -o "$RUN_USER" -g "$RUN_USER" -m 0750 "$SSL_DIR"
-    if [ -r "$CERT_SRC" ] && [ -r "$KEY_SRC" ]; then
-        install -o "$RUN_USER" -g "$RUN_USER" -m 0644 "$(readlink -f "$CERT_SRC" 2>/dev/null || echo "$CERT_SRC")" "$SSL_DIR/fullchain.pem"
-        install -o "$RUN_USER" -g "$RUN_USER" -m 0640 "$(readlink -f "$KEY_SRC"  2>/dev/null || echo "$KEY_SRC")"  "$SSL_DIR/privkey.pem"
-        c_g "  copied cert/key into $SSL_DIR (owned by $RUN_USER)"
+    if [ -f "$CERT_SRC" ] && [ -f "$KEY_SRC" ]; then
+        if install -o "$RUN_USER" -g "$RUN_USER" -m 0644 "$(readlink -f "$CERT_SRC" 2>/dev/null || echo "$CERT_SRC")" "$SSL_DIR/fullchain.pem" \
+           && install -o "$RUN_USER" -g "$RUN_USER" -m 0640 "$(readlink -f "$KEY_SRC" 2>/dev/null || echo "$KEY_SRC")" "$SSL_DIR/privkey.pem"; then
+            c_g "  copied cert/key into $SSL_DIR (owned by $RUN_USER)"
+        else
+            c_y "  WARNING: could not copy cert/key into $SSL_DIR — place fullchain.pem + privkey.pem there (owned by $RUN_USER) before starting."
+        fi
     else
-        c_y "  cert/key not readable yet — created $SSL_DIR; place fullchain.pem + privkey.pem there"
-        c_y "  (owned by $RUN_USER) before starting the service."
+        c_y "  cert/key are not readable files yet — created $SSL_DIR; place the fullchain.pem + privkey.pem"
+        c_y "  FILES there (owned by $RUN_USER) before starting. (Give the .pem files, NOT a directory.)"
     fi
     if [ "$GEN_HOOK" = true ]; then
         HOOK="$CONF_DIR/$TICKER-renew-certs.sh"
