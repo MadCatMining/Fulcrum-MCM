@@ -11,6 +11,10 @@ There are two ways to do it: the **installer script** (recommended) or the **man
 > enabled, **`txindex=1`**, be **fully synced**, and **not** be a pruning node. Fulcrum auto-detects
 > the coin from the daemon's `getnetworkinfo.subversion` — there is no `coin=` setting; just point
 > each instance at the matching daemon.
+>
+> **If you enable ssl/wss**, you must **already have a valid TLS cert + key** on the host (Let's
+> Encrypt, another CA, or self-signed). The installer *copies* your existing cert/key into a
+> fulcrum-owned dir — it does **not** obtain certificates.
 
 ---
 
@@ -45,6 +49,43 @@ Everything is **namespaced by ticker**, so DIMI, DGC, IL8P, LYNX … coexist on 
 | service | `/etc/systemd/system/fulcrum-<ticker>.service` |
 | database | `/fulcrum-db/<ticker>` |
 | TLS certs | `/etc/fulcrum/<ticker>-ssl/{fullchain,privkey}.pem` |
+
+---
+
+### Unattended / automation
+
+For provisioning (Ansible, cloud-init, or a loop over many coins), run with `--unattended` — every
+answer is read from `FULCRUM_*` env vars, no prompts, and a missing **required** var aborts non-zero:
+
+| var | required | meaning |
+|---|:---:|---|
+| `FULCRUM_TICKER` | ✅ | ticker (names config/service/db) |
+| `FULCRUM_RPC_PORT` `FULCRUM_RPC_USER` `FULCRUM_RPC_PASS` | ✅ | daemon RPC |
+| `FULCRUM_COIN_NAME` | — | **display name** (e.g. `Diminutivecoin`) — not the ticker |
+| `FULCRUM_RPC_HOST` | — | default `127.0.0.1` |
+| `FULCRUM_TCP` `FULCRUM_SSL` `FULCRUM_WS` `FULCRUM_WSS` | — | port per protocol; unset = not exposed |
+| `FULCRUM_CERT` `FULCRUM_KEY` | if ssl/wss | existing cert + key paths |
+| `FULCRUM_LE_NAME` | — | LE `live/<name>` — **auto-derived** from `FULCRUM_CERT`; set only to override |
+| `FULCRUM_LE_HOOK` | — | default `true`; set `false` to skip the renewal hook (other CA / self-signed) |
+| `FULCRUM_HOSTNAME` `FULCRUM_PEERING` `FULCRUM_ANNOUNCE` | — | public identity / peering |
+| `FULCRUM_PROXY_FROM` `FULCRUM_WS_XFF` | — | reverse-proxy (`proxy_protocol*`, `ws_x_forwarded_for`) |
+| `FULCRUM_ADMIN_PORT` | — | local admin port |
+| `FULCRUM_START` | — | `yes` = `systemctl start` after enable |
+
+```bash
+sudo FULCRUM_COIN_NAME=Diminutivecoin FULCRUM_TICKER=DIMI \
+     FULCRUM_RPC_HOST=127.0.0.1 FULCRUM_RPC_PORT=49588 \
+     FULCRUM_RPC_USER=username FULCRUM_RPC_PASS='userpassword' \
+     FULCRUM_TCP=50011 FULCRUM_SSL=50012 FULCRUM_WSS=50013 \
+     FULCRUM_CERT=/etc/letsencrypt/live/electrumx1.diminutivecoin.com/fullchain.pem \
+     FULCRUM_KEY=/etc/letsencrypt/live/electrumx1.diminutivecoin.com/privkey.pem \
+     FULCRUM_HOSTNAME=electrumx2.diminutivecoin.com \
+     FULCRUM_PEERING=true FULCRUM_ANNOUNCE=true FULCRUM_START=yes \
+     bash install-fulcrum-mcm.sh --unattended
+```
+The LE hostname is auto-derived from `FULCRUM_CERT` above (no `FULCRUM_LE_NAME` needed). For a
+non-Let's-Encrypt cert, no renewal hook is written; to skip it for an LE cert too, set
+`FULCRUM_LE_HOOK=false`.
 
 ---
 
