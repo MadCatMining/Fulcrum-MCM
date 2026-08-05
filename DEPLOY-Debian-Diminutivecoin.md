@@ -1,6 +1,6 @@
 # Deploying Fulcrum-MCM (with Diminutivecoin support) on Debian
 
-> **Version:** this guide targets **Fulcrum-MCM `v1.0.0`** (forked from upstream Fulcrum `v2.1.1`).
+> **Version:** this guide targets **Fulcrum-MCM `v1.0.2`** (forked from upstream Fulcrum `v2.1.1`).
 > The build produces a binary named **`Fulcrum-MCM`**; `./Fulcrum-MCM --version` prints
 > `Fulcrum-MCM 1.0.0` and `Forked from Fulcrum v2.1.1`.
 

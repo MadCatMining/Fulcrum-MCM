@@ -168,10 +168,18 @@ popd 1> /dev/null
 # Make Docker image using the commit's Dockerfile
 cd "${workdir}/${PACKAGE}/contrib/build/${plat}" || fail "Could not chdir to Dockerfile directory"
 [ -e "$dockerfile" ] || fail "Could not find $dockerfile in $(pwd)"
-info "Creating docker image: $docker_img_name ..."
-docker build $arch_arg -t "$docker_img_name" - < "$dockerfile" \
-  || fail "Could not build docker image. Check that docker is installed and that you can run docker without sudo on this system."
-printok "Docker image created: $docker_img_name"
+if [ -z "$FORCE_IMAGE_REBUILD" ] && docker image inspect "$docker_img_name" >/dev/null 2>&1; then
+    # Reuse the already-built toolchain image. Rebuilding it re-runs the ~1h static-Qt6/MXE
+    # compile and, worse, can *fail* if the base image has since been updated to a newer toolchain
+    # that breaks the pinned MXE build — even though a perfectly good image is already present.
+    # Set FORCE_IMAGE_REBUILD=1 to force a fresh image build (e.g. after changing the Dockerfile).
+    info "Reusing existing docker image: $docker_img_name (set FORCE_IMAGE_REBUILD=1 to force a rebuild)"
+else
+    info "Creating docker image: $docker_img_name ..."
+    docker build $arch_arg -t "$docker_img_name" - < "$dockerfile" \
+      || fail "Could not build docker image. Check that docker is installed and that you can run docker without sudo on this system."
+    printok "Docker image created: $docker_img_name"
+fi
 
 # Run _build.sh from the specified commit inside Docker image, with $workdir (usually ./work) mapped to /work
 cd "$workdir/.." || fail "Could not chdir"
