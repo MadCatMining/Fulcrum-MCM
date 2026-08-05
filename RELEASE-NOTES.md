@@ -96,3 +96,30 @@ See `DEPLOY-Debian-Diminutivecoin.md` §9. In short: add a `Coin::XXX` enumerato
 entry in the `CoinConfig` registry (bump the `std::array` size), set the subversion prefix, address
 version bytes, and block-ID hash. If it needs a new PoW hash, append to `PoWHashAlgo`, add a `case`
 to `HashHeaderForAlgo`, and vendor the implementation under `src/bitcoin/crypto/`.
+
+## Release history
+
+### v1.0.2
+- **Portable Linux binary — fixes a `SIGILL` (illegal instruction) crash on Intel and other CPUs
+  without AMD's SSE4a.** The prebuilt static RocksDB in the build SDK had been compiled with
+  `PORTABLE=0` (i.e. `-march=native`) on an AMD build host, which baked an **SSE4a `insertq`**
+  instruction into the release binary. SSE4a is AMD-only, so on any Intel host Fulcrum-MCM died the
+  moment RocksDB opened the database (`Loading database ...` → `code=killed, status=4/ILL`,
+  restart loop). RocksDB is now built with **`PORTABLE=1`** (generic x86-64 baseline; CRC32C stays
+  hardware-accelerated via RocksDB's runtime CPUID dispatch), and the binary is verified free of
+  SSE4a/XOP/FMA4/TBM opcodes. Runs on any x86-64 CPU, Intel or AMD. **No source change** — this is a
+  build-portability fix; the on-disk DB format is unchanged, so existing installs just swap the
+  binary and resume indexing. *Note for source builders: build your static RocksDB with
+  `-DPORTABLE=1` (or `PORTABLE=<baseline-arch>`), never `-march=native`, if the binary may run on a
+  different CPU than the one it was built on.*
+
+### v1.0.1
+- Fixed a PROXY-protocol buffered-data bug: a plaintext **tcp** client behind a proxy that sends the
+  PROXY header and the first request in the same TCP segment could get no reply (the request was
+  stranded in the read buffer after the header was stripped). Added a deferred read-kick in
+  `AbstractConnection::on_connected()`, plus a diagnostic warning when an unconsumed PROXY header is
+  detected (misconfigured `proxy_protocol` / `proxy_protocol_from`).
+
+### v1.0.0
+- First Fulcrum-MCM release. Everything under **"What's new vs. upstream"** above, forked from
+  upstream Fulcrum `v2.1.1`.

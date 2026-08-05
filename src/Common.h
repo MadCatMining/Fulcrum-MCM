@@ -58,7 +58,7 @@ struct BadArgs : Exception { using Exception::Exception; ~BadArgs() override; };
 #define APPNAME "Fulcrum-MCM"
 // Fulcrum-MCM maintains its own independent version line (see RELEASE-NOTES.md); VERSION is this
 // fork's version, and UPSTREAM_BASE_VERSION records the upstream Fulcrum release it was forked from.
-#define VERSION "1.0.1"
+#define VERSION "1.0.2"
 #define UPSTREAM_BASE_VERSION "2.1.1"
 #ifdef QT_DEBUG
 inline constexpr bool isReleaseBuild() { return false; }
