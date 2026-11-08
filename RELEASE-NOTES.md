@@ -110,7 +110,7 @@ to `HashHeaderForAlgo`, and vendor the implementation under `src/bitcoin/crypto/
 
 ## Release history
 
-### v1.0.3
+### v1.1.0
 - **Digitalcoin (DGC) re-targeted to its new Lynx-based chain.** DGC moved off its own multi-algo
   chain and onto the Lynx multi-chain codebase (daemon subversion `/Digitalcoin:28.4.1/`). DGC now
   uses the IL8P / Lynx-family format: PoS blocks with SHA256d block-ids, era-based per-tx `nTime`
