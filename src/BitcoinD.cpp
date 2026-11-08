@@ -236,9 +236,9 @@ namespace {
             // Diminutivecoin: a Blackcoin-more v13 fork. Detected by its own subversion prefix.
             // NB: confirm this prefix against the live `diminutivecoind` `getnetworkinfo` "subversion" field.
             isDIMI = subversion.startsWith("/Diminutivecoin:");
-            isDGC = subversion.startsWith("/Digitalcoin Core:");
+            isDGC = subversion.startsWith("/Digitalcoin:"); // Lynx-based daemon, e.g. /Digitalcoin:28.4.1/
             isIL8P = subversion.startsWith("/Infiniloop:");
-            isLYNX = subversion.startsWith("/Lynx Core:");
+            isLYNX = subversion.startsWith("/Lynx:") || subversion.startsWith("/Lynx Core:");
             // regular bitcoind, "version" is reliable and always the same format
             version = Version::BitcoinDCompact(val);
         }

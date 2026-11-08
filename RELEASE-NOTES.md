@@ -66,9 +66,20 @@ In addition to upstream **BCH / BTC / LTC**:
 | Coin | Ticker | Block-ID hash | Notable format |
 |------|--------|---------------|----------------|
 | Diminutivecoin | DIMI | Tribus | tx `nTime` (v1), Core 0.13 RPC quirks |
-| Digitalcoin | DGC | SHA256d | legacy `estimatefee` |
+| Digitalcoin² | DGC | SHA256d (incl. genesis) PoS | era-based tx `nTime`, SegWit |
 | Infiniloop | IL8P | scrypt genesis → SHA256d PoS | era-based tx `nTime`, SegWit |
 | Lynx | LYNX | scrypt genesis → SHA256d PoS | era-based tx `nTime`, SegWit |
+| Lynx family¹ | ALIOTH … INDUS | scrypt genesis → SHA256d PoS | era-based tx `nTime`, SegWit |
+
+¹ The **Lynx multi-chain family**: Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea,
+Halley, Indus — the same Lynx codebase compiled per `export $NAME=<chain>`. Each reports subversion
+`/<Chain>:` and differs only in identity and base58 address bytes; all share Lynx's format. Defined via
+a shared `makeLynxFamily()` factory in `src/CoinConfig.cpp`.
+
+² **Digitalcoin** was rebased onto the Lynx multi-chain codebase and now uses the same format as IL8P,
+except that it kept its original 2013 genesis, whose block-id is SHA256d (no scrypt-genesis override).
+Detected via subversion `/Digitalcoin:` (e.g. `/Digitalcoin:28.4.1/`); the legacy `/Digitalcoin Core:` daemon is no longer supported. **Existing DGC databases synced from
+the pre-rebase daemon must be deleted and re-synced.**
 
 ### 7. Reverse-proxy / PROXY-protocol support
 - `src/ProxyProtocol.{h,cpp}` — accepts HAProxy **PROXY protocol v1 and v2**, so the real client
@@ -98,6 +109,20 @@ version bytes, and block-ID hash. If it needs a new PoW hash, append to `PoWHash
 to `HashHeaderForAlgo`, and vendor the implementation under `src/bitcoin/crypto/`.
 
 ## Release history
+
+### v1.0.3
+- **Digitalcoin (DGC) re-targeted to its new Lynx-based chain.** DGC moved off its own multi-algo
+  chain and onto the Lynx multi-chain codebase (daemon subversion `/Digitalcoin:28.4.1/`). DGC now
+  uses the IL8P / Lynx-family format: PoS blocks with SHA256d block-ids, era-based per-tx `nTime`
+  (blocks with header nVersion <= 7), SegWit, `estimatesmartfee`. Its genesis keeps the original 2013
+  block-id `5e039e1c…f9c8`, which is **SHA256d** (scrypt is only that block's PoW), so unlike IL8P
+  there is no scrypt-genesis override. Address bytes unchanged (P2PKH 30 / P2SH 5); docker default
+  RPC port is now 7998. The legacy `/Digitalcoin Core:` daemon is no longer supported. **Existing DGC
+  databases must be deleted and re-synced** against the new daemon.
+- **Added the Lynx multi-chain family:** Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir,
+  Galatea, Halley, Indus (auto-detected by subversion `/<Chain>:`). LYNX now also matches `/Lynx:`.
+- Build: `contrib/build/build.sh` reuses an existing toolchain docker image instead of always
+  rebuilding it (set `FORCE_IMAGE_REBUILD=1` to force).
 
 ### v1.0.2
 - **Portable Linux binary — fixes a `SIGILL` (illegal instruction) crash on Intel and other CPUs

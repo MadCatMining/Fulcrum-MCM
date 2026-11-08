@@ -113,22 +113,20 @@ CoinConfig makeDIMI() {
     return c;
 }
 
+CoinConfig makeLynxFamily(Coin coin, const char *name, const char *displayName,
+                          const char *subversionPrefix, uint8_t p2pkh, uint8_t p2sh); // defined below
+
+// Digitalcoin was rebased onto the Lynx multi-chain codebase (`$NAME=digitalcoin`), so it now has the
+// same tx/block format as IL8P / the Lynx family: PoS with era-based tx nTime (header nVersion <= 7),
+// SegWit, smart fees. ONE difference: it kept its original 2013 genesis (hash 5e039e1c…f9c8), whose
+// block-id is plain SHA256d of the header (scrypt was only its PoW hash, 000006cb…), so unlike IL8P
+// there is NO scrypt-genesis override. Network params (from the Lynx chain spec): p2p 7999, rpc 7998,
+// pubkey prefix 30 ('D'), script prefix 5, magic fbc0b6db.
 CoinConfig makeDGC() {
-    CoinConfig c;
-    c.coin = Coin::DGC;
-    c.name = QStringLiteral("DGC");
-    c.displayName = QStringLiteral("Digitalcoin");
-    // NB: the `getnetworkinfo` subversion for Digitalcoin Core looks like "/Digitalcoin Core:5.0.3/".
-    // Match that prefix (this is NOT the message-signing magic "Digitalcoin Signed Message:").
-    c.subversionPrefixes = {QStringLiteral("/Digitalcoin Core:")};
-    c.mainnetVer = {0x1e, 0x5};
-    c.testnetVer = {111, 196};
-    c.regtestVer = {111, 196};
-    c.getRawTxVerboseAsInt = true;    // Bitcoin Core 0.13 quirk
-    c.allowSegWit = false;
-    c.blockIdAlgo = PoWHashAlgo::SHA256d;
-    c.estimateFee = EstimateFeeStyle::LegacyOneArg;
-    c.peerResourcePath = QString(); // empty -> peering disabled
+    CoinConfig c = makeLynxFamily(Coin::DGC, "DGC", "Digitalcoin", "/Digitalcoin:", 0x1e, 0x05);
+    // The Lynx-based daemon reports e.g. `/Digitalcoin:28.4.1/`. The legacy pre-rebase daemon
+    // (`/Digitalcoin Core:`) is deliberately NOT matched: its chain/format is no longer supported.
+    c.genesisBlockIdAlgo.reset();   // genesis block-id is SHA256d, same as every later block
     return c;
 }
 
@@ -163,7 +161,8 @@ CoinConfig makeLYNX() {
     c.coin = Coin::LYNX;
     c.name = QStringLiteral("LYNX");
     c.displayName = QStringLiteral("Lynx core");
-    c.subversionPrefixes = {QStringLiteral("/Lynx Core:")};
+    // A `$NAME=Lynx` build reports `/Lynx:`; a default build (no $NAME) reports `/Lynx Core:` — match both.
+    c.subversionPrefixes = {QStringLiteral("/Lynx:"), QStringLiteral("/Lynx Core:")};
     c.mainnetVer = {0x2d, 0x16};
     c.testnetVer = {111, 196};
     c.regtestVer = {111, 196};
@@ -185,8 +184,33 @@ CoinConfig makeLYNX() {
 }
 
 
-const std::array<CoinConfig, 8> & registry() {
-    static const std::array<CoinConfig, 8> kRegistry = {{
+// Shared factory for the Lynx multi-chain family. These chains are built from the same Lynx codebase
+// via `export $NAME=<chain>` before compiling; each reports subversion `/<Chain>:` and differs ONLY in
+// identity and base58 address bytes. They all share Lynx's format: a scrypt-mined genesis whose block-id
+// is scrypt while every subsequent (PoS) block's id is plain SHA256d; a per-tx nTime carried on blocks
+// whose header nVersion <= 7 (Blackcoin "protocol v2" era rule); active SegWit; and Core-style smart fees.
+CoinConfig makeLynxFamily(Coin coin, const char *name, const char *displayName,
+                          const char *subversionPrefix, uint8_t p2pkh, uint8_t p2sh) {
+    CoinConfig c;
+    c.coin = coin;
+    c.name = QString::fromLatin1(name);
+    c.displayName = QString::fromLatin1(displayName);
+    c.subversionPrefixes = {QString::fromLatin1(subversionPrefix)};
+    c.mainnetVer = {p2pkh, p2sh};
+    c.testnetVer = {111, 196};
+    c.regtestVer = {111, 196};
+    c.hasTransactionTimestamp = true;             // POS
+    c.txTimestampMaxBlockVersion = 7;             // tx nTime on blocks with header nVersion <= 7
+    c.allowSegWit = true;                         // BIP141 witness commitment present on-chain
+    c.blockIdAlgo = PoWHashAlgo::SHA256d;         // PoS blocks
+    c.genesisBlockIdAlgo = PoWHashAlgo::Scrypt;   // genesis block alone is scrypt-mined
+    c.estimateFee = EstimateFeeStyle::SmartFee;
+    c.peerResourcePath = QString();               // empty -> peering disabled
+    return c;
+}
+
+const std::array<CoinConfig, 17> & registry() {
+    static const std::array<CoinConfig, 17> kRegistry = {{
         makeUnknown(),
         makeBCH(),
         makeBTC(),
@@ -195,6 +219,16 @@ const std::array<CoinConfig, 8> & registry() {
         makeDGC(),
         makeIL8P(),
         makeLYNX(),
+        // Lynx multi-chain family (subversion = /<Chain>:, address bytes {p2pkh, p2sh}):
+        makeLynxFamily(Coin::Alioth,     "ALIOTH",     "Alioth",     "/Alioth:",     0xd7, 0xef),
+        makeLynxFamily(Coin::Borrelly,   "BORRELLY",   "Borrelly",   "/Borrelly:",   0xbd, 0x57),
+        makeLynxFamily(Coin::Cassiopeia, "CASSIOPEIA", "Cassiopeia", "/Cassiopeia:", 0xfc, 0xc1),
+        makeLynxFamily(Coin::Delphinus,  "DELPHINUS",  "Delphinus",  "/Delphinus:",  0xa3, 0x89),
+        makeLynxFamily(Coin::Enceladus,  "ENCELADUS",  "Enceladus",  "/Enceladus:",  0x55, 0x76),
+        makeLynxFamily(Coin::Fenrir,     "FENRIR",     "Fenrir",     "/Fenrir:",     0x05, 0xef),
+        makeLynxFamily(Coin::Galatea,    "GALATEA",    "Galatea",    "/Galatea:",    0x4a, 0x33),
+        makeLynxFamily(Coin::Halley,     "HALLEY",     "Halley",     "/Halley:",     0x36, 0x3f),
+        makeLynxFamily(Coin::Indus,      "INDUS",      "Indus",      "/Indus:",      0x0c, 0x0b),
     }};
     return kRegistry;
 }

@@ -72,7 +72,12 @@ Thumbs.db
 *.dll
 *.exe
 Fulcrum
+Fulcrum-MCM
 
 # Out-of-source qmake shadow-build directories (local only)
 /build/
 /build-test/
+
+# Editor / assistant tooling — never belongs in the repo
+.claude/
+*.tmp.*

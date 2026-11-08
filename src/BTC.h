@@ -46,7 +46,10 @@
 namespace BTC
 {
     /// Used by the Storage and Controller subsystem to figure out what coin we are on (BCH vs BTC vs LTC vs DIMI)
-    enum class Coin { Unknown = 0, BCH, BTC, LTC, DIMI, DGC, IL8P, LYNX };
+    enum class Coin { Unknown = 0, BCH, BTC, LTC, DIMI, DGC, IL8P, LYNX,
+                      // Lynx multi-chain family (same codebase built per `export $NAME=...`; differ only
+                      // in identity + base58 address bytes). See CoinConfig.cpp makeLynxFamily().
+                      Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea, Halley, Indus };
 
     QString coinToName(Coin);
     Coin coinFromName(const QString &);

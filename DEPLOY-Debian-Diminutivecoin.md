@@ -1,6 +1,6 @@
 # Deploying Fulcrum-MCM (with Diminutivecoin support) on Debian
 
-> **Version:** this guide targets **Fulcrum-MCM `v1.0.0`** (forked from upstream Fulcrum `v2.1.1`).
+> **Version:** this guide targets **Fulcrum-MCM `v1.0.2`** (forked from upstream Fulcrum `v2.1.1`).
 > The build produces a binary named **`Fulcrum-MCM`**; `./Fulcrum-MCM --version` prints
 > `Fulcrum-MCM 1.0.0` and `Forked from Fulcrum v2.1.1`.
 
@@ -13,7 +13,10 @@
 > document.
 >
 > Coins currently in the registry: **BCH, BTC, LTC, DIMI** (Diminutivecoin, Tribus),
-> **DGC** (Digitalcoin), **IL8P** (Infiniloop, scrypt), **LYNX** (Lynx core, scrypt-genesis). Vendored block-ID hashes:
+> **DGC** (Digitalcoin — rebased onto Lynx, SHA256d genesis), **IL8P** (Infiniloop, scrypt), **LYNX** (Lynx core, scrypt-genesis), and the
+> **Lynx multi-chain family** — Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea,
+> Halley, Indus (same Lynx codebase built per `$NAME`; same scrypt-genesis → SHA256d PoS format).
+> Vendored block-ID hashes:
 > **SHA256d, Tribus, Scrypt** (≈35 more names are reserved in the enum and throw until
 > their sources are vendored). Three mechanisms added for the trickier PoS/altcoin
 > formats, all driven from `CoinConfig` (details in § 9):
