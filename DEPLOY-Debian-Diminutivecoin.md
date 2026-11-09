@@ -1,8 +1,21 @@
 # Deploying Fulcrum-MCM (with Diminutivecoin support) on Debian
 
-> **Version:** this guide targets **Fulcrum-MCM `v1.0.2`** (forked from upstream Fulcrum `v2.1.1`).
+> **Version:** this guide targets **Fulcrum-MCM `v1.1.1`** (forked from upstream Fulcrum `v2.1.1`).
 > The build produces a binary named **`Fulcrum-MCM`**; `./Fulcrum-MCM --version` prints
-> `Fulcrum-MCM 1.0.0` and `Forked from Fulcrum v2.1.1`.
+> `Fulcrum-MCM 1.1.1` and `Forked from Fulcrum v2.1.1`.
+
+> **Upgrading to v1.1.x**
+> - **Most coins:** swap the binary and restart. The DB format is unchanged, so DIMI / IL8P / LYNX /
+>   BCH / BTC / LTC servers resume indexing where they left off.
+> - **DGC (Digitalcoin): delete the database and re-sync.** Digitalcoin left its own multi-algo
+>   daemon for one built on the Lynx multi-chain codebase (subversion `/Digitalcoin:28.4.1/`). The
+>   legacy `/Digitalcoin Core:` daemon is no longer recognised. Stop Fulcrum, empty its `datadir`,
+>   point `bitcoind =` at the new daemon (default RPC port **7998**) and start it again. **Use v1.1.1
+>   or later:** v1.1.0 misread DGC transactions and stops at block 8451, and a DB created by v1.1.0
+>   must be wiped too.
+> - **New coins:** the Lynx multi-chain family (Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus,
+>   Fenrir, Galatea, Halley, Indus). Each is detected automatically from its daemon's `/<Chain>:`
+>   subversion. See § 9.7.
 
 > **What's new in this fork**
 > Per-coin behaviour has been refactored into a single declarative table
@@ -13,16 +26,19 @@
 > document.
 >
 > Coins currently in the registry: **BCH, BTC, LTC, DIMI** (Diminutivecoin, Tribus),
-> **DGC** (Digitalcoin — rebased onto Lynx, SHA256d genesis), **IL8P** (Infiniloop, scrypt), **LYNX** (Lynx core, scrypt-genesis), and the
-> **Lynx multi-chain family** — Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea,
-> Halley, Indus (same Lynx codebase built per `$NAME`; same scrypt-genesis → SHA256d PoS format).
+> **DGC** (Digitalcoin; Lynx-based daemon, plain SHA256d chain), **IL8P** (Infiniloop,
+> scrypt genesis), **LYNX** (Lynx core, scrypt genesis), and the **Lynx multi-chain family**:
+> Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea, Halley, Indus (the same Lynx
+> codebase built per `$NAME`, with the same scrypt-genesis → SHA256d PoS format).
 > Vendored block-ID hashes:
 > **SHA256d, Tribus, Scrypt** (≈35 more names are reserved in the enum and throw until
 > their sources are vendored). Three mechanisms added for the trickier PoS/altcoin
 > formats, all driven from `CoinConfig` (details in § 9):
 > - **`genesisBlockIdAlgo`** — hybrid coins that mine *only* the genesis block with an
 >   exotic algo but use a different block-ID hash for every later (PoS) block. IL8P:
->   genesis = scrypt, all later blocks = SHA256d.
+>   genesis = scrypt, all later blocks = SHA256d. (DGC does *not* set it: its genesis was
+>   scrypt-mined, but its block **ID** is SHA256d.)
+> - Neither mechanism is used by DGC: it kept its whole pre-Lynx chain, which has no tx `nTime`.
 > - **`txTimestampMaxBlockVersion`** — Blackcoin "protocol-v2" coins that carried a
 >   per-tx `nTime` until a switch that bumped the block header version. IL8P: blocks
 >   with header `nVersion ≤ 7` carry tx `nTime`; later (BIP9) blocks do not.
@@ -36,6 +52,12 @@
 > startup with errors like `version 'GLIBCXX_3.4.3x' not found` or undefined Qt
 > symbols. **Build Fulcrum on the Debian host** (or in a Debian container) so it
 > links against Debian's own Qt6 / libstdc++ / glibc. That is what this guide does.
+>
+> **Or skip building entirely:** each GitHub release ships a **fully static, portable** Linux
+> binary (`Fulcrum-MCM-x86_64-linux`, runs on any x86-64 distro and CPU, Intel or AMD) plus Windows
+> `.exe`s. Download it from
+> <https://github.com/MadCatMining/Fulcrum-MCM/releases/latest>, or use the installer in
+> `contrib/install/`. Then continue at § 5.
 
 ---
 
@@ -83,7 +105,7 @@ The binary is `~/Fulcrum-MCM/build/Fulcrum-MCM`. Verify:
 
 ```bash
 ./Fulcrum-MCM --version
-# -> Fulcrum-MCM 1.0.0 (Release <commit>)
+# -> Fulcrum-MCM 1.1.1 (Release <commit>)
 #    Forked from Fulcrum v2.1.1
 ```
 
@@ -234,11 +256,18 @@ All per-coin behaviour now lives in two files:
 
 ### Step 1 — append the enumerator
 
-In `src/BTC.h` (current: `Unknown, BCH, BTC, LTC, DIMI, DGC, IL8P`):
+In `src/BTC.h` (current: `Unknown, BCH, BTC, LTC, DIMI, DGC, IL8P, LYNX`, then the Lynx
+family `Alioth … Indus`):
 
 ```cpp
-enum class Coin { Unknown = 0, BCH, BTC, LTC, DIMI, DGC, IL8P, /* NEW: */ PEERCOIN };
+enum class Coin { Unknown = 0, BCH, BTC, LTC, DIMI, DGC, IL8P, LYNX,
+                  Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea, Halley, Indus,
+                  /* NEW: */ PEERCOIN };
 ```
+
+> **Lynx-family chain?** If the new coin is another `$NAME=<chain>` build of the Lynx codebase,
+> you don't need a full `makeXxx()`. Add the enumerator and one `makeLynxFamily(...)` line to the
+> registry (see § 9.7).
 
 ### Step 2 — append a `CoinConfig` entry
 
@@ -294,13 +323,16 @@ CoinConfig makeMyCoin() {
 Then add it to the registry:
 
 ```cpp
-static const std::array<CoinConfig, 8> kRegistry = {{
-    makeUnknown(), makeBCH(), makeBTC(), makeLTC(), makeDIMI(), makeDGC(), makeIL8P(),
+static const std::array<CoinConfig, 18> kRegistry = {{
+    makeUnknown(), makeBCH(), makeBTC(), makeLTC(), makeDIMI(), makeDGC(), makeIL8P(), makeLYNX(),
+    makeLynxFamily(Coin::Alioth, "ALIOTH", "Alioth", "/Alioth:", 0xd7, 0xef),
+    // ... the other eight Lynx-family chains ...
     makeMyCoin(),                         // <-- new
 }};
 ```
 
-Bump the `std::array<…, N>` size to match (it is `7` today; adding one coin makes it `8`).
+Bump the `std::array<…, N>` size to match (it is `17` today; adding one coin makes it `18`). Each
+array size must appear twice: in the function's return type and in the `kRegistry` declaration.
 
 ### Step 3 — wire a new PoW hash, *only if needed*
 
@@ -373,7 +405,15 @@ without re-detection.
 - **Block-ID match.** Compare the hash Fulcrum prints during sync at height 0, 1,
   100 with `<coin>-cli getblockhash <height>`. A mismatch at **height 0 only**
   means the coin uses a special genesis algo (`genesisBlockIdAlgo`); a mismatch
-  from height 1 onward means the wrong `blockIdAlgo`.
+  from height 1 onward means the wrong `blockIdAlgo`. **Don't assume** the genesis ID hash
+  from its mining algo: hash the genesis header both ways and compare with the chain spec's
+  `genesishash`. DGC's genesis was scrypt-mined, but its ID is SHA256d (see § 9.7).
+- **Same codebase ≠ same format.** A chain that *moved onto* a codebase keeps the format of its old
+  blocks. DGC's daemon is Lynx-based, but its 8.7M pre-Lynx blocks have no tx `nTime`. Copying the
+  IL8P rule crashed sync at block 8451, the first block with more than one transaction. Check a raw
+  block from each era. After the 80-byte header and the tx count, the coinbase starts with its
+  4-byte version. Next comes either `01` + 32 zero bytes (no `nTime`), `0001` (a SegWit marker, no
+  `nTime`), or 4 bytes close to the block time (`nTime` present).
 - **Segwit.** Even PoS coins may have segwit active. Tell-tale: the coinbase
   carries a BIP141 witness commitment (an `OP_RETURN` output whose script starts
   `6a24aa21a9ed…`). If present, set `allowSegWit = true` — it is backward-compatible
@@ -427,3 +467,67 @@ If you hit a `ReadCompactSize: size too large` FATAL at some height, dump that r
 block and check the header version and whether its txs carry `nTime`; the fix is
 almost always the `txTimestampMaxBlockVersion` boundary or a block-ID algo.
 
+### 9.7 Worked example — the Lynx multi-chain family and DGC
+
+The Lynx codebase builds one daemon per chain (`export NAME=<chain>` before compiling). Every such
+chain reports subversion `/<Chain>:` and has the same format as IL8P: scrypt-genesis, then SHA256d
+proof-of-stake blocks, era-based tx `nTime` (header `nVersion ≤ 7`), SegWit and smart fees. Only the
+identity and base58 bytes differ, so they all share one factory in `src/CoinConfig.cpp`:
+
+```cpp
+CoinConfig makeLynxFamily(Coin coin, const char *name, const char *displayName,
+                          const char *subversionPrefix, uint8_t p2pkh, uint8_t p2sh);
+
+// registry entries — subversion = /<Chain>:, address bytes {p2pkh, p2sh}
+makeLynxFamily(Coin::Alioth,  "ALIOTH",  "Alioth",  "/Alioth:",  0xd7, 0xef),
+makeLynxFamily(Coin::Indus,   "INDUS",   "Indus",   "/Indus:",   0x0c, 0x0b),
+// ...
+```
+
+To add another chain from the Lynx chain spec (the `spec.*["<chain>"]` block), take:
+- `pubkeyPrefix` → `p2pkh` and `scriptPrefix` → `p2sh`
+- `coinSymbol` → `name`
+- `/<displayName>:` → the subversion prefix. Confirm it with `getnetworkinfo` on the live daemon.
+
+Then check `genesishash` as described below.
+
+**DGC (Digitalcoin) is *not* a Lynx-family coin, even though its daemon is.** It switched its
+daemon to the Lynx codebase and moved to Lynx-style PoS at height 8725000, but it **kept its whole
+original 2013+ chain** (multi-algo SHA256d/X11/scrypt PoW). Its format is therefore a plain
+Bitcoin-style chain, checked against the live daemon:
+
+- **Block-ID = SHA256d for every block, genesis included.** The genesis (`5e039e1c…f9c8`) was
+  scrypt-mined, but SHA256d(header) = `5e039e1c…` matches the spec's `genesishash`, while scrypt =
+  `000006cb…` is only its PoW. So there's no `genesisBlockIdAlgo`.
+- **No tx `nTime` in any era.** In raw blocks 8451 (header v1), 8725000 (v`0x20000001`) and
+  8725001/8725977 (v`0x20000002`), the coinbase version is followed directly by the input count or
+  the SegWit marker. The IL8P rule (`txTimestampMaxBlockVersion = 7`) crashed v1.1.0 at block 8451.
+- **SegWit** has been active since height 8725643.
+
+```cpp
+CoinConfig makeDGC() {
+    CoinConfig c;
+    c.coin = Coin::DGC;
+    c.name = QStringLiteral("DGC");
+    c.displayName = QStringLiteral("Digitalcoin");
+    c.subversionPrefixes = {QStringLiteral("/Digitalcoin:")};
+    c.mainnetVer = {0x1e, 0x05};
+    c.hasTransactionTimestamp = false;            // no tx nTime in any era
+    c.allowSegWit = true;                         // active from height 8725643
+    c.blockIdAlgo = PoWHashAlgo::SHA256d;         // every block, genesis included
+    c.estimateFee = EstimateFeeStyle::SmartFee;
+    c.peerResourcePath = QString();               // peering disabled
+    return c;
+}
+```
+
+| DGC parameter | Value |
+|---|---|
+| Daemon subversion | `/Digitalcoin:28.4.1/` (legacy `/Digitalcoin Core:` **not** matched) |
+| P2P / RPC port | 7999 / **7998** (the Docker `coin-defaults.sh` default) |
+| Address bytes | P2PKH 30 (`D…`), P2SH 5 |
+| Genesis | `5e039e1ca1dbf128973bf6cff98169e40a1b194c3b91463ab74956f413b2f9c8` (SHA256d) |
+| Lynx PoS from / SegWit from | height 8725000 / 8725643 |
+
+Quick check on a new DGC server before the first sync: `digitalcoin-cli getblockhash 0` must
+return `5e039e1c…`.

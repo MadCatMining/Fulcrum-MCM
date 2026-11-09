@@ -113,20 +113,34 @@ CoinConfig makeDIMI() {
     return c;
 }
 
-CoinConfig makeLynxFamily(Coin coin, const char *name, const char *displayName,
-                          const char *subversionPrefix, uint8_t p2pkh, uint8_t p2sh); // defined below
-
-// Digitalcoin was rebased onto the Lynx multi-chain codebase (`$NAME=digitalcoin`), so it now has the
-// same tx/block format as IL8P / the Lynx family: PoS with era-based tx nTime (header nVersion <= 7),
-// SegWit, smart fees. ONE difference: it kept its original 2013 genesis (hash 5e039e1c…f9c8), whose
-// block-id is plain SHA256d of the header (scrypt was only its PoW hash, 000006cb…), so unlike IL8P
-// there is NO scrypt-genesis override. Network params (from the Lynx chain spec): p2p 7999, rpc 7998,
-// pubkey prefix 30 ('D'), script prefix 5, magic fbc0b6db.
+// Digitalcoin (DGC). Its daemon is now built from the Lynx multi-chain codebase (subversion e.g.
+// `/Digitalcoin:28.4.1/`) and moved to Lynx-style PoS at height 8725000. Unlike IL8P / the Lynx family,
+// though, DGC kept its ENTIRE original chain history (2013 multi-algo SHA256d/X11/scrypt PoW), so its
+// format is that of a plain Bitcoin-style chain. All verified against the live daemon:
+//  - block-ids are SHA256d for EVERY block, genesis included (5e039e1c…f9c8; scrypt was only its PoW);
+//  - NO per-tx nTime in any era. Raw blocks 8451 (hdr v1), 8725000 (v0x20000001) and 8725001/8725977
+//    (v0x20000002) all have the tx version followed directly by the vin count / segwit marker. So the
+//    IL8P-style `txTimestampMaxBlockVersion` rule must NOT be used (it broke sync at block 8451,
+//    the first multi-tx block, with "ReadCompactSize(): size too large");
+//  - SegWit is active from height 8725643;
+//  - the trailing PoS block signature on Lynx-era blocks is ignored (allowMimbleWimble=false).
+// Network params: p2p 7999, rpc 7998, pubkey prefix 30 ('D'), script prefix 5, magic fbc0b6db.
 CoinConfig makeDGC() {
-    CoinConfig c = makeLynxFamily(Coin::DGC, "DGC", "Digitalcoin", "/Digitalcoin:", 0x1e, 0x05);
-    // The Lynx-based daemon reports e.g. `/Digitalcoin:28.4.1/`. The legacy pre-rebase daemon
-    // (`/Digitalcoin Core:`) is deliberately NOT matched: its chain/format is no longer supported.
-    c.genesisBlockIdAlgo.reset();   // genesis block-id is SHA256d, same as every later block
+    CoinConfig c;
+    c.coin = Coin::DGC;
+    c.name = QStringLiteral("DGC");
+    c.displayName = QStringLiteral("Digitalcoin");
+    // The Lynx-based daemon reports e.g. `/Digitalcoin:28.4.1/`. The legacy pre-Lynx daemon
+    // (`/Digitalcoin Core:`) is deliberately NOT matched: it is no longer supported.
+    c.subversionPrefixes = {QStringLiteral("/Digitalcoin:")};
+    c.mainnetVer = {0x1e, 0x05};
+    c.testnetVer = {111, 196};
+    c.regtestVer = {111, 196};
+    c.hasTransactionTimestamp = false;            // no tx nTime in any era (see above)
+    c.allowSegWit = true;                         // active from height 8725643
+    c.blockIdAlgo = PoWHashAlgo::SHA256d;         // every block, genesis included
+    c.estimateFee = EstimateFeeStyle::SmartFee;   // modern (28.x) Core-based daemon
+    c.peerResourcePath = QString();               // empty -> peering disabled
     return c;
 }
 

@@ -66,7 +66,7 @@ In addition to upstream **BCH / BTC / LTC**:
 | Coin | Ticker | Block-ID hash | Notable format |
 |------|--------|---------------|----------------|
 | Diminutivecoin | DIMI | Tribus | tx `nTime` (v1), Core 0.13 RPC quirks |
-| Digitalcoin² | DGC | SHA256d (incl. genesis) PoS | era-based tx `nTime`, SegWit |
+| Digitalcoin² | DGC | SHA256d (all blocks, incl. genesis) | no tx `nTime`, SegWit, smart fees |
 | Infiniloop | IL8P | scrypt genesis → SHA256d PoS | era-based tx `nTime`, SegWit |
 | Lynx | LYNX | scrypt genesis → SHA256d PoS | era-based tx `nTime`, SegWit |
 | Lynx family¹ | ALIOTH … INDUS | scrypt genesis → SHA256d PoS | era-based tx `nTime`, SegWit |
@@ -76,8 +76,10 @@ Halley, Indus — the same Lynx codebase compiled per `export $NAME=<chain>`. Ea
 `/<Chain>:` and differs only in identity and base58 address bytes; all share Lynx's format. Defined via
 a shared `makeLynxFamily()` factory in `src/CoinConfig.cpp`.
 
-² **Digitalcoin** was rebased onto the Lynx multi-chain codebase and now uses the same format as IL8P,
-except that it kept its original 2013 genesis, whose block-id is SHA256d (no scrypt-genesis override).
+² **Digitalcoin**'s daemon is now built from the Lynx multi-chain codebase and switched to Lynx-style PoS
+at height 8725000, but it kept its whole original chain history. Its format is a plain Bitcoin-style
+chain: SHA256d block-ids for every block (genesis included), **no** per-tx `nTime` in any era, SegWit
+(active from height 8725643).
 Detected via subversion `/Digitalcoin:` (e.g. `/Digitalcoin:28.4.1/`); the legacy `/Digitalcoin Core:` daemon is no longer supported. **Existing DGC databases synced from
 the pre-rebase daemon must be deleted and re-synced.**
 
@@ -109,6 +111,15 @@ version bytes, and block-ID hash. If it needs a new PoW hash, append to `PoWHash
 to `HashHeaderForAlgo`, and vendor the implementation under `src/bitcoin/crypto/`.
 
 ## Release history
+
+### v1.1.1
+- **Fixed DGC sync.** v1.1.0 gave Digitalcoin the IL8P-style per-transaction timestamp rule. DGC's
+  transactions never carried an `nTime`, in either the old PoW era or the Lynx PoS era (checked
+  against raw blocks 8451, 8725000, 8725001 and 8725977), so v1.1.0 stopped at block 8451, the first
+  block with more than one transaction (`ReadCompactSize(): size too large`). DGC is now configured as
+  SHA256d block-ids everywhere, no tx `nTime`, SegWit (active from 8725643), smart fees.
+  **DGC servers that ran v1.1.0 must delete their database and re-sync**, because blocks 0–8450 were
+  indexed with the wrong parsing. No other coin is affected.
 
 ### v1.1.0
 - **Digitalcoin (DGC) re-targeted to its new Lynx-based chain.** DGC moved off its own multi-algo
