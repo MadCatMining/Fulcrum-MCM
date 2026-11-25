@@ -515,6 +515,7 @@ struct DownloadBlocksTask : CtlTask
     const bool allowSegWit; ///< initted in c'tor. If true, deserialize blocks using the optional segwit extensons to the tx format.
     const bool allowMimble; ///< like above, but if true we allow mimblewimble (litecoin)
     const bool allowCashTokens; ///< allow special cashtoken deserialization rules (BCH only)
+    const bool allowAuxPow; ///< merge-mined coin: strip the auxpow proof from blocks before deserializing them
     const int rpaStartHeight; ///< if >= 0, rpa data will be indexed in PreProcessedBlock, starting at this height.
     std::optional<CoTask> rpaTask; ///< this gets created only at the point where current block height >= rpaStartHeight && rpaStartHeight > -1
 
@@ -536,6 +537,7 @@ DownloadBlocksTask::DownloadBlocksTask(unsigned from, unsigned to, unsigned stri
     : CtlTask(ctl_, QStringLiteral("Task.DL %1 -> %2").arg(from).arg(to)), from(from), to(to), stride(stride),
       expectedCt(unsigned(nToDL(from, to, stride))), max_q(int(nClients)+1),
       allowSegWit(ctl_->isSegWitCoin()), allowMimble(ctl_->isMimbleWimbleCoin()), allowCashTokens(ctl_->isBCHCoin()),
+      allowAuxPow(ctl_->isAuxPowCoin()),
       rpaStartHeight(rpaHeight)
 {
     FatalAssert(to >= from && ctl_ && stride > 0, "Invalid params to DonloadBlocksTask c'tor, FIXME!");
@@ -592,6 +594,7 @@ void DownloadBlocksTask::do_get(unsigned int bnum)
                         PreProcessedBlockPtr maybe_ppb; // either this is filled
                         Controller::RpaOnlyModeDataPtr maybe_rpaOnlyMode;  // or this is.. but not both!
                         try {
+                            if (allowAuxPow) BTC::StripAuxPow(rawblock); // merge-mined coins: drop the auxpow proof after the header
                             const auto cblock = BTC::Deserialize<bitcoin::CBlock>(rawblock, 0, allowSegWit, allowMimble, allowCashTokens, allowMimble /* throw if junk at end if Litecoin (catch deser. bugs) */);
                             {
                                 VarDLTaskResult var = process_block_guts(bnum, hash, rawblock, cblock);

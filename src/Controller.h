@@ -77,6 +77,9 @@ public:
     bool isMimbleWimbleCoin() const {
         return BTC::GetCoinConfig(coinType.load(std::memory_order_relaxed)).allowMimbleWimble;
     }
+    bool isAuxPowCoin() const {
+        return BTC::GetCoinConfig(coinType.load(std::memory_order_relaxed)).hasAuxPow;
+    }
     bool isDIMI() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::DIMI; }
     bool isDGC() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::DGC; }
     bool isIL8P() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::IL8P; }

@@ -223,8 +223,29 @@ CoinConfig makeLynxFamily(Coin coin, const char *name, const char *displayName,
     return c;
 }
 
-const std::array<CoinConfig, 17> & registry() {
-    static const std::array<CoinConfig, 17> kRegistry = {{
+// Unobtanium (UNO). Old SHA256d coin, merge-mined with Bitcoin (Namecoin-style AuxPoW), SegWit active.
+// Params from ElectrumX's `Unobtanium(AuxPowMixin, Coin)` (DeserializerAuxPowSegWit): P2PKH 0x82, P2SH 0x1e,
+// genesis 000004c2fc5fffb810dccc197d603690099a68305232e552d96ccbe8e2c52b75. Daemon: `/Unobtanium:0.11.5/`.
+CoinConfig makeUNO() {
+    CoinConfig c;
+    c.coin = Coin::UNO;
+    c.name = QStringLiteral("UNO");
+    c.displayName = QStringLiteral("Unobtanium");
+    c.subversionPrefixes = {QStringLiteral("/Unobtanium:")};
+    c.mainnetVer = {0x82, 0x1e};
+    c.testnetVer = {111, 196};
+    c.regtestVer = {111, 196};
+    c.allowSegWit = true;
+    c.hasAuxPow = true;                           // auxpow proof after the header on merge-mined blocks
+    c.blockIdAlgo = PoWHashAlgo::SHA256d;
+    c.getRawTxVerboseAsInt = true;                // old (0.11.x) daemon: numeric verbose arg
+    c.estimateFee = EstimateFeeStyle::LegacyOneArg;
+    c.peerResourcePath = QString();               // empty -> peering disabled
+    return c;
+}
+
+const std::array<CoinConfig, 18> & registry() {
+    static const std::array<CoinConfig, 18> kRegistry = {{
         makeUnknown(),
         makeBCH(),
         makeBTC(),
@@ -233,6 +254,7 @@ const std::array<CoinConfig, 17> & registry() {
         makeDGC(),
         makeIL8P(),
         makeLYNX(),
+        makeUNO(),
         // Lynx multi-chain family (subversion = /<Chain>:, address bytes {p2pkh, p2sh}):
         makeLynxFamily(Coin::Alioth,     "ALIOTH",     "Alioth",     "/Alioth:",     0xd7, 0xef),
         makeLynxFamily(Coin::Borrelly,   "BORRELLY",   "Borrelly",   "/Borrelly:",   0xbd, 0x57),

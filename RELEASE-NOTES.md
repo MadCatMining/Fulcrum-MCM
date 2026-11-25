@@ -70,6 +70,7 @@ In addition to upstream **BCH / BTC / LTC**:
 | Infiniloop | IL8P | scrypt genesis → SHA256d PoS | era-based tx `nTime`, SegWit |
 | Lynx | LYNX | scrypt genesis → SHA256d PoS | era-based tx `nTime`, SegWit |
 | Lynx family¹ | ALIOTH … INDUS | scrypt genesis → SHA256d PoS | era-based tx `nTime`, SegWit |
+| Unobtanium³ | UNO | SHA256d | merge-mined (AuxPoW), SegWit, legacy `estimatefee` |
 
 ¹ The **Lynx multi-chain family**: Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea,
 Halley, Indus — the same Lynx codebase compiled per `export $NAME=<chain>`. Each reports subversion
@@ -82,6 +83,12 @@ chain: SHA256d block-ids for every block (genesis included), **no** per-tx `nTim
 (active from height 8725643).
 Detected via subversion `/Digitalcoin:` (e.g. `/Digitalcoin:28.4.1/`); the legacy `/Digitalcoin Core:` daemon is no longer supported. **Existing DGC databases synced from
 the pre-rebase daemon must be deleted and re-synced.**
+
+³ **Unobtanium** is merge-mined with Bitcoin (Namecoin-style AuxPoW). Blocks whose header version has
+bit `0x100` set carry an AuxPoW proof between the 80-byte header and the transactions.
+`BTC::StripAuxPow()` removes it before the block is parsed (enabled per coin by `CoinConfig::hasAuxPow`).
+Block IDs are still the SHA256d hash of UNO's own 80-byte header, and clients get 80-byte headers, as
+with ElectrumX.
 
 ### 7. Reverse-proxy / PROXY-protocol support
 - `src/ProxyProtocol.{h,cpp}` — accepts HAProxy **PROXY protocol v1 and v2**, so the real client
@@ -111,6 +118,15 @@ version bytes, and block-ID hash. If it needs a new PoW hash, append to `PoWHash
 to `HashHeaderForAlgo`, and vendor the implementation under `src/bitcoin/crypto/`.
 
 ## Release history
+
+### v1.2.0
+- **New coin: Unobtanium (UNO)**, detected from the daemon's `/Unobtanium:` subversion. P2PKH `0x82`,
+  P2SH `0x1e`, SHA256d block IDs, SegWit, legacy `estimatefee`.
+- **New: merge-mining (AuxPoW) support.** Blocks with the AuxPoW version bit (`0x100`) carry a proof
+  of the parent chain's work between the header and the transactions. It is now removed before
+  parsing. This is enabled per coin by `CoinConfig::hasAuxPow`, and only UNO uses it today. Checked
+  against a live UNO block (height 2586099): the 726-byte proof splits off cleanly, and the remaining
+  transaction's txid matches the header's merkle root. No other coin is affected.
 
 ### v1.1.1
 - **Fixed DGC sync.** v1.1.0 gave Digitalcoin the IL8P-style per-transaction timestamp rule. DGC's

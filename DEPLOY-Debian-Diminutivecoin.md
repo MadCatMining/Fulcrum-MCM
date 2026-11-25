@@ -1,10 +1,10 @@
 # Deploying Fulcrum-MCM (with Diminutivecoin support) on Debian
 
-> **Version:** this guide targets **Fulcrum-MCM `v1.1.1`** (forked from upstream Fulcrum `v2.1.1`).
+> **Version:** this guide targets **Fulcrum-MCM `v1.2.0`** (forked from upstream Fulcrum `v2.1.1`).
 > The build produces a binary named **`Fulcrum-MCM`**; `./Fulcrum-MCM --version` prints
-> `Fulcrum-MCM 1.1.1` and `Forked from Fulcrum v2.1.1`.
+> `Fulcrum-MCM 1.2.0` and `Forked from Fulcrum v2.1.1`.
 
-> **Upgrading to v1.1.x**
+> **Upgrading to v1.1.x / v1.2.0**
 > - **Most coins:** swap the binary and restart. The DB format is unchanged, so DIMI / IL8P / LYNX /
 >   BCH / BTC / LTC servers resume indexing where they left off.
 > - **DGC (Digitalcoin): delete the database and re-sync.** Digitalcoin left its own multi-algo
@@ -13,7 +13,8 @@
 >   point `bitcoind =` at the new daemon (default RPC port **7998**) and start it again. **Use v1.1.1
 >   or later:** v1.1.0 misread DGC transactions and stops at block 8451, and a DB created by v1.1.0
 >   must be wiped too.
-> - **New coins:** the Lynx multi-chain family (Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus,
+> - **New in v1.2.0:** Unobtanium (UNO), the first merge-mined (AuxPoW) coin. See § 9.8.
+> - **New in v1.1.0:** the Lynx multi-chain family (Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus,
 >   Fenrir, Galatea, Halley, Indus). Each is detected automatically from its daemon's `/<Chain>:`
 >   subversion. See § 9.7.
 
@@ -29,7 +30,8 @@
 > **DGC** (Digitalcoin; Lynx-based daemon, plain SHA256d chain), **IL8P** (Infiniloop,
 > scrypt genesis), **LYNX** (Lynx core, scrypt genesis), and the **Lynx multi-chain family**:
 > Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea, Halley, Indus (the same Lynx
-> codebase built per `$NAME`, with the same scrypt-genesis → SHA256d PoS format).
+> codebase built per `$NAME`, with the same scrypt-genesis → SHA256d PoS format), and **UNO**
+> (Unobtanium, SHA256d, merge-mined / AuxPoW).
 > Vendored block-ID hashes:
 > **SHA256d, Tribus, Scrypt** (≈35 more names are reserved in the enum and throw until
 > their sources are vendored). Three mechanisms added for the trickier PoS/altcoin
@@ -44,6 +46,8 @@
 >   with header `nVersion ≤ 7` carry tx `nTime`; later (BIP9) blocks do not.
 > - **block-ID hash abstraction** (`PoWHashAlgo` + `HashHeaderForAlgo`) — coins whose
 >   block *identifier* is a non-SHA256d hash (DIMI = Tribus, IL8P genesis = scrypt).
+> - **`hasAuxPow`** — merge-mined coins whose blocks carry an AuxPoW proof between the header
+>   and the transactions (UNO). The proof is removed before the block is parsed.
 
 > **Important — binary portability**
 > The binary compiled on this Nobara/Fedora machine was built with **gcc 15.2.1**
@@ -262,7 +266,7 @@ family `Alioth … Indus`):
 ```cpp
 enum class Coin { Unknown = 0, BCH, BTC, LTC, DIMI, DGC, IL8P, LYNX,
                   Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea, Halley, Indus,
-                  /* NEW: */ PEERCOIN };
+                  UNO, /* NEW: */ PEERCOIN };
 ```
 
 > **Lynx-family chain?** If the new coin is another `$NAME=<chain>` build of the Lynx codebase,
@@ -323,15 +327,15 @@ CoinConfig makeMyCoin() {
 Then add it to the registry:
 
 ```cpp
-static const std::array<CoinConfig, 18> kRegistry = {{
-    makeUnknown(), makeBCH(), makeBTC(), makeLTC(), makeDIMI(), makeDGC(), makeIL8P(), makeLYNX(),
+static const std::array<CoinConfig, 19> kRegistry = {{
+    makeUnknown(), makeBCH(), makeBTC(), makeLTC(), makeDIMI(), makeDGC(), makeIL8P(), makeLYNX(), makeUNO(),
     makeLynxFamily(Coin::Alioth, "ALIOTH", "Alioth", "/Alioth:", 0xd7, 0xef),
     // ... the other eight Lynx-family chains ...
     makeMyCoin(),                         // <-- new
 }};
 ```
 
-Bump the `std::array<…, N>` size to match (it is `17` today; adding one coin makes it `18`). Each
+Bump the `std::array<…, N>` size to match (it is `18` today; adding one coin makes it `19`). Each
 array size must appear twice: in the function's return type and in the `kRegistry` declaration.
 
 ### Step 3 — wire a new PoW hash, *only if needed*
@@ -531,3 +535,52 @@ CoinConfig makeDGC() {
 
 Quick check on a new DGC server before the first sync: `digitalcoin-cli getblockhash 0` must
 return `5e039e1c…`.
+
+### 9.8 Worked example — a merge-mined (AuxPoW) coin (UNO)
+
+Unobtanium is merge-mined with Bitcoin, Namecoin-style. In each merge-mined block the header's
+`nVersion` has bit `0x100` set (the high 16 bits are the chain ID, `0x75` for UNO). An **AuxPoW proof**
+then sits between the 80-byte header and the transaction list:
+
+```
+parent-chain coinbase tx | parent hash (32) | coinbase merkle branch (varint n + n*32) | index (4)
+| chain merkle branch (varint n + n*32) | chain index (4) | parent block header (80)
+```
+
+Setting `hasAuxPow = true` makes the block downloader call `BTC::StripAuxPow()`, which removes that
+proof before parsing. Blocks without the bit (e.g. from before merge mining started) are left alone.
+The block hash is still SHA256d of UNO's *own* 80-byte header, and Electrum clients get 80-byte
+headers, as with ElectrumX.
+
+```cpp
+CoinConfig makeUNO() {
+    CoinConfig c;
+    c.coin = Coin::UNO;
+    c.name = QStringLiteral("UNO");
+    c.displayName = QStringLiteral("Unobtanium");
+    c.subversionPrefixes = {QStringLiteral("/Unobtanium:")};
+    c.mainnetVer = {0x82, 0x1e};                  // from ElectrumX P2PKH_VERBYTE / P2SH_VERBYTES
+    c.allowSegWit = true;
+    c.hasAuxPow = true;
+    c.blockIdAlgo = PoWHashAlgo::SHA256d;
+    c.getRawTxVerboseAsInt = true;                // old 0.11.x daemon
+    c.estimateFee = EstimateFeeStyle::LegacyOneArg; // daemon has estimatefee, no estimatesmartfee
+    c.peerResourcePath = QString();
+    return c;
+}
+```
+
+| UNO parameter | Value |
+|---|---|
+| Daemon subversion | `/Unobtanium:0.11.5/` |
+| P2P port | 65534 (default). The RPC port is whatever `rpcport=` says in `unobtanium.conf`. |
+| Address bytes | P2PKH `0x82`, P2SH `0x1e` |
+| Genesis | `000004c2fc5fffb810dccc197d603690099a68305232e552d96ccbe8e2c52b75` (SHA256d) |
+
+**Porting another AuxPoW coin from ElectrumX:** a coin class with `AuxPowMixin` and
+`DESERIALIZER = lib_tx.DeserializerAuxPow` (or `…AuxPowSegWit`) needs `hasAuxPow = true` (plus
+`allowSegWit = true` for the SegWit variant). To check a new one, take a raw block
+(`<coin>-cli getblock <hash> false`) and read the proof per the layout above. After it, the remaining
+bytes must parse as the tx list with nothing left over, and a single-tx block's txid must equal the
+header's merkle root.
+

@@ -133,6 +133,37 @@ namespace BTC
         return 0;
     }
 
+    bool StripAuxPow(QByteArray &rawblock)
+    {
+        constexpr int hdrSize = GetBlockHeaderSize();
+        constexpr uint32_t VERSION_AUXPOW = 1u << 8;
+        if (!GetCoinConfig(GetCurrentCoin()).hasAuxPow || rawblock.size() < hdrSize)
+            return false;
+        const auto *p = reinterpret_cast<const unsigned char *>(rawblock.constData());
+        const uint32_t nVersion = uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
+        if (!(nVersion & VERSION_AUXPOW))
+            return false; // e.g. blocks mined before merged mining was enabled
+
+        // CAuxPow layout (Namecoin / Dogecoin / ElectrumX `DeserializerAuxPow.read_auxpow`):
+        //   parent-chain coinbase tx (may use the witness encoding), parent block hash (32),
+        //   coinbase merkle branch (varint n + n*32), coinbase index (4),
+        //   chain merkle branch (varint n + n*32), chain index (4), parent block header (80).
+        const int version = bitcoin::PROTOCOL_VERSION | bitcoin::SERIALIZE_TRANSACTION_USE_WITNESS;
+        bitcoin::GenericVectorReader<QByteArray> vr(bitcoin::SER_NETWORK, version, rawblock, hdrSize);
+        bitcoin::CMutableTransaction parentCoinbase;
+        parentCoinbase.Unserialize(vr);
+        bitcoin::uint256 parentHash;
+        std::vector<bitcoin::uint256> coinbaseBranch, chainBranch;
+        int32_t coinbaseIndex{}, chainIndex{};
+        char parentHeader[hdrSize];
+        vr >> parentHash >> coinbaseBranch >> coinbaseIndex >> chainBranch >> chainIndex;
+        vr.read(parentHeader, hdrSize);
+
+        const auto auxPowEnd = rawblock.size() - QByteArray::size_type(vr.size());
+        rawblock.remove(hdrSize, auxPowEnd - hdrSize);
+        return true;
+    }
+
     QByteArray HashBlockHeaderRev(const QByteArray &header)
     {
         QByteArray ret = HashBlockHeader(header);

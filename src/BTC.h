@@ -49,7 +49,8 @@ namespace BTC
     enum class Coin { Unknown = 0, BCH, BTC, LTC, DIMI, DGC, IL8P, LYNX,
                       // Lynx multi-chain family (same codebase built per `export $NAME=...`; differ only
                       // in identity + base58 address bytes). See CoinConfig.cpp makeLynxFamily().
-                      Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea, Halley, Indus };
+                      Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea, Halley, Indus,
+                      UNO /* Unobtanium: SHA256d merge-mined (AuxPoW) + SegWit */ };
 
     QString coinToName(Coin);
     Coin coinFromName(const QString &);
@@ -77,6 +78,14 @@ namespace BTC
     /// Bitcoin Core 0.13 — e.g. Diminutivecoin — reject a JSON boolean here with "JSON value is not an integer
     /// as expected", so we pass an integer (0/1)). Sourced from CoinConfig at runtime.
     QVariant GetRawTransactionVerboseArg(bool verbose) noexcept;
+
+    /// Merge-mined (AuxPoW, Namecoin-style) coins put an auxpow proof between the 80-byte block header and the
+    /// tx list of every block whose header nVersion has the AuxPoW bit (1 << 8) set. If the current coin has
+    /// `CoinConfig::hasAuxPow` and `rawblock` is such a block, the proof is removed in place, leaving a plain
+    /// header + txs block that the normal CBlock deserializer reads. Returns true iff bytes were removed.
+    /// The header itself (and thus the block hash) is untouched. Throws std::ios_base::failure on a truncated or
+    /// malformed proof.
+    bool StripAuxPow(QByteArray &rawblock);
 
     /// Tests
     namespace Tests {

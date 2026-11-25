@@ -84,6 +84,10 @@ struct CoinConfig {
     bool hasCoinStake = false;            ///< PoS marker; reserved (today: future-proofing only)
     bool hasPoSBlockSig = false;          ///< PoS block-signature trailer; reserved
     uint32_t headerExtraBytes = 0;        ///< extra bytes after the 80-byte header (0 today)
+    /// Merge-mined (AuxPoW) coin: blocks whose header nVersion has bit 8 set carry an auxpow proof between the
+    /// header and the tx list. It is stripped (BTC::StripAuxPow) before the block is deserialized. Block-ids are
+    /// still the `blockIdAlgo` hash of the coin's own 80-byte header, and headers served to clients stay 80 bytes.
+    bool hasAuxPow = false;
 
     // ---- block-ID hash ----
     PoWHashAlgo blockIdAlgo = PoWHashAlgo::SHA256d;
