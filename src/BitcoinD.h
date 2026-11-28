@@ -195,6 +195,10 @@ private:
     BitcoinDInfo bitcoinDInfo;     ///< guarded by bitcoinDInfoLock
 
     void refreshBitcoinDNetworkInfo(); ///< whenever bitcoind comes back alive, this is invoked to update the bitcoinDInfo struct
+    /// Fallback for pre-0.9-era daemons (Novacoin 0.5.x) lacking `getnetworkinfo`: synthesizes the network info from `getinfo`
+    void refreshBitcoinDNetworkInfoLegacy();
+    /// Common handler for the (possibly synthesized) `getnetworkinfo` result: updates bitcoinDInfo, detects the coin, etc.
+    void processNetworkInfo(const QVariantMap &networkInfo);
 
     mutable std::shared_mutex bitcoinDGenesisHashLock;
     /// When we first (re)connect to bitcoind, we query this info to make sure it's still sane.

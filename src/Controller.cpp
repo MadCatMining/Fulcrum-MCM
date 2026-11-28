@@ -405,10 +405,16 @@ struct GetChainInfoTask final : public CtlTask
     void process() override;
 
     ChainInfo info;
+private:
+    void processLegacy(); ///< pre-0.9-era daemons (Novacoin 0.5.x): getinfo + getbestblockhash instead of getblockchaininfo
 };
 
 void GetChainInfoTask::process()
 {
+    if (ctl->isLegacyRpcCoin()) {
+        processLegacy();
+        return;
+    }
     submitRequest("getblockchaininfo", QVariantList{}, [this](const RPC::Message & resp){
         const auto Err = [this, id=resp.id.toInt()](const QString &thing) {
             const auto msg = QString("Failed to parse %1").arg(thing);
@@ -467,6 +473,40 @@ void GetChainInfoTask::process()
     });
 }
 
+void GetChainInfoTask::processLegacy()
+{
+    submitRequest("getinfo", QVariantList{}, [this](const RPC::Message & resp){
+        const auto map = resp.result().toMap();
+        bool ok = false;
+        info.blocks = map.value("blocks").toInt(&ok);
+        if (map.isEmpty() || !ok || info.blocks < 0) {
+            errorCode = resp.id.toInt();
+            errorMessage = "Failed to parse getinfo response";
+            Error() << "INTERNAL ERROR: " << errorMessage;
+            emit errored();
+            return;
+        }
+        info.chain = map.value("testnet").toBool() ? "test" : "main";
+        info.headers = info.blocks; // no header-sync info available
+        info.initialBlockDownload = false;
+        info.warnings = map.value("errors").toString();
+        // getinfo's "blocks" and getbestblockhash are separate calls; if a block arrives in between the tip hash may be one
+        // block ahead of info.blocks. That is harmless: the next poll (or block download) reconciles it.
+        submitRequest("getbestblockhash", QVariantList{}, [this](const RPC::Message & resp){
+            info.bestBlockhash = Util::ParseHexFast(resp.result().toByteArray());
+            if (info.bestBlockhash.size() != HashLen) {
+                errorCode = resp.id.toInt();
+                errorMessage = "Failed to parse getbestblockhash response";
+                Error() << "INTERNAL ERROR: " << errorMessage;
+                emit errored();
+                return;
+            }
+            TraceM(info.toString());
+            emit success();
+        });
+    });
+}
+
 QString ChainInfo::toString() const
 {
     QString ret;
@@ -516,6 +556,7 @@ struct DownloadBlocksTask : CtlTask
     const bool allowMimble; ///< like above, but if true we allow mimblewimble (litecoin)
     const bool allowCashTokens; ///< allow special cashtoken deserialization rules (BCH only)
     const bool allowAuxPow; ///< merge-mined coin: strip the auxpow proof from blocks before deserializing them
+    const bool legacyRpc; ///< pre-0.9-era daemon (Novacoin 0.5.x): fetch raw blocks with `dumpblock`
     const int rpaStartHeight; ///< if >= 0, rpa data will be indexed in PreProcessedBlock, starting at this height.
     std::optional<CoTask> rpaTask; ///< this gets created only at the point where current block height >= rpaStartHeight && rpaStartHeight > -1
 
@@ -538,6 +579,7 @@ DownloadBlocksTask::DownloadBlocksTask(unsigned from, unsigned to, unsigned stri
       expectedCt(unsigned(nToDL(from, to, stride))), max_q(int(nClients)+1),
       allowSegWit(ctl_->isSegWitCoin()), allowMimble(ctl_->isMimbleWimbleCoin()), allowCashTokens(ctl_->isBCHCoin()),
       allowAuxPow(ctl_->isAuxPowCoin()),
+      legacyRpc(ctl_->isLegacyRpcCoin()),
       rpaStartHeight(rpaHeight)
 {
     FatalAssert(to >= from && ctl_ && stride > 0, "Invalid params to DonloadBlocksTask c'tor, FIXME!");
@@ -585,7 +627,10 @@ void DownloadBlocksTask::do_get(unsigned int bnum)
         QVariant var = resp.result();
         const auto hash = Util::ParseHexFast(var.toByteArray());
         if (hash.length() == HashLen) {
-            submitRequest("getblock", {var, false}, [this, bnum, hash](const RPC::Message & resp){
+            // Legacy (Novacoin 0.5.x) daemons have JSON-only `getblock`; `dumpblock <hash>` returns the serialized block.
+            const auto [method, params] = legacyRpc ? std::pair{QStringLiteral("dumpblock"), QVariantList{var}}
+                                                    : std::pair{QStringLiteral("getblock"), QVariantList{var, false}};
+            submitRequest(method, params, [this, bnum, hash](const RPC::Message & resp){
                 try {
                     auto rawblock = Util::ParseHexFast(resp.result().toByteArray());
                     const auto header = rawblock.left(HEADER_SIZE); // we need a deep copy of this anyway so might as well take it now.

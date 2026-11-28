@@ -244,8 +244,38 @@ CoinConfig makeUNO() {
     return c;
 }
 
-const std::array<CoinConfig, 18> & registry() {
-    static const std::array<CoinConfig, 18> kRegistry = {{
+// Novacoin (NVC): a 2013 Peercoin-lineage coin, PoW long since disabled (pure PoS). Verified against the source
+// of the user's daemon (novacoin-project/novacoin @ 510a23a2, `nvc-v0.5.8-53-g510a23a2`) and live RPC output:
+//  - block-ids are scrypt(N=1024,r=1,p=1) of the 80-byte header for EVERY block, PoW and PoS alike (genesis
+//    00000a06…33a4, block 1 00000a79…7e9f and PoS tip 1114415 ffc07ad4…109e all recomputed and matched);
+//  - every tx carries nTime right after nVersion (CTransaction serializer has no version gate); txid is
+//    SHA256d over the whole tx, nTime included. No SegWit;
+//  - blocks end with vchBlockSig (PoS signature), which the deserializer ignores as trailing data;
+//  - COIN = 1,000,000 (6 decimals) -- amounts in raw txs, and thus everything we index, are in those units;
+//  - legacy 0.5.x RPC (see CoinConfig::legacyRpc). Peers advertise `/Satoshi:0.7.6.9/` (which would collide
+//    with BTC), but RPC has no getnetworkinfo, so detection uses getinfo's "version" string: "nvc-v0.5.8-…".
+// Params from ElectrumX's `Novacoin(ScryptMixin, Coin)`: P2PKH 0x08, P2SH 0x14. Daemon RPC port 8344, p2p 7777.
+CoinConfig makeNVC() {
+    CoinConfig c;
+    c.coin = Coin::NVC;
+    c.name = QStringLiteral("NVC");
+    c.displayName = QStringLiteral("Novacoin");
+    c.subversionPrefixes = {QStringLiteral("nvc-"), QStringLiteral("/Novacoin:")};
+    c.mainnetVer = {0x08, 0x14};
+    c.testnetVer = {111, 196};
+    c.regtestVer = {111, 196};
+    c.hasTransactionTimestamp = true;
+    c.txTimestampAlways = true;                   // nTime on every tx, in every era
+    c.blockIdAlgo = PoWHashAlgo::Scrypt;          // every block, genesis included
+    c.getRawTxVerboseAsInt = true;                // getrawtransaction <txid> [verbose=int]
+    c.estimateFee = EstimateFeeStyle::LegacyOneArg;
+    c.legacyRpc = true;
+    c.peerResourcePath = QString();               // empty -> peering disabled
+    return c;
+}
+
+const std::array<CoinConfig, 19> & registry() {
+    static const std::array<CoinConfig, 19> kRegistry = {{
         makeUnknown(),
         makeBCH(),
         makeBTC(),
@@ -255,6 +285,7 @@ const std::array<CoinConfig, 18> & registry() {
         makeIL8P(),
         makeLYNX(),
         makeUNO(),
+        makeNVC(),
         // Lynx multi-chain family (subversion = /<Chain>:, address bytes {p2pkh, p2sh}):
         makeLynxFamily(Coin::Alioth,     "ALIOTH",     "Alioth",     "/Alioth:",     0xd7, 0xef),
         makeLynxFamily(Coin::Borrelly,   "BORRELLY",   "Borrelly",   "/Borrelly:",   0xbd, 0x57),

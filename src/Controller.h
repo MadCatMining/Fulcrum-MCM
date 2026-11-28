@@ -80,6 +80,8 @@ public:
     bool isAuxPowCoin() const {
         return BTC::GetCoinConfig(coinType.load(std::memory_order_relaxed)).hasAuxPow;
     }
+    /// Pre-0.9-era daemon RPC (Novacoin 0.5.x), see CoinConfig::legacyRpc
+    bool isLegacyRpcCoin() const { return BTC::GetCoinConfig(coinType.load(std::memory_order_relaxed)).legacyRpc; }
     bool isDIMI() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::DIMI; }
     bool isDGC() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::DGC; }
     bool isIL8P() const { return coinType.load(std::memory_order_relaxed) == BTC::Coin::IL8P; }

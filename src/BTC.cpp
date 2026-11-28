@@ -116,6 +116,8 @@ namespace BTC
     {
         const auto &cfg = GetCoinConfig(GetCurrentCoin());
         if (!cfg.hasTransactionTimestamp) return 0;
+        if (cfg.txTimestampAlways) // Peercoin/Novacoin: nTime on every tx, blocks and standalone txs alike
+            return bitcoin::SERIALIZE_TRANSACTION_USE_TIMESTAMP | bitcoin::SERIALIZE_TRANSACTION_TIMESTAMP_ALLVERS;
         if (!cfg.txTimestampMaxBlockVersion) {
             // DIMI / Blackcoin-more: nTime only on nVersion==1 txs; the tx deserializer applies that gate.
             return bitcoin::SERIALIZE_TRANSACTION_USE_TIMESTAMP;
@@ -365,5 +367,61 @@ namespace {
     }
 
     auto t1 = App::registerTest("btcmisc", test);
+
+    // Novacoin (NVC): real mainnet data from a `nvc-v0.5.8-53-g510a23a2` daemon.
+    void testNovacoin()
+    {
+        const auto prevCoin = BTC::GetCurrentCoin();
+        Defer restore([prevCoin]{ BTC::SetCurrentCoin(prevCoin); });
+
+        Log() << "Testing Novacoin detection ...";
+        const auto *cc = BTC::GetCoinConfigBySubversion("nvc-v0.5.8-53-g510a23a2-dirty-bdb-gcc");
+        if (!cc || cc->coin != BTC::Coin::NVC) throw Exception("getinfo version string did not detect NVC");
+        BTC::SetCurrentCoin(BTC::Coin::NVC);
+
+        Log() << "Testing Novacoin block-id hashing (scrypt for PoW and PoS blocks) ...";
+        const auto mkHdr = [](int32_t ver, const char *prev, const char *merkle, uint32_t time, uint32_t bits, uint32_t nonce) {
+            QByteArray h;
+            const auto le32 = [&h](uint32_t v) { for (int i = 0; i < 4; ++i) h.append(char((v >> (8 * i)) & 0xff)); };
+            le32(uint32_t(ver));
+            h += Util::reversedCopy(Util::ParseHexFast(prev));
+            h += Util::reversedCopy(Util::ParseHexFast(merkle));
+            le32(time); le32(bits); le32(nonce);
+            return h;
+        };
+        struct { QByteArray hdr; const char *hash; } const blocks[] = {
+            { mkHdr(1, "0000000000000000000000000000000000000000000000000000000000000000",
+                    "4cb33b3b6a861dcbc685d3e614a9cafb945738d6833f182855679f2fad02057b", 1360105017, 0x1e0fffff, 1575379),
+              "00000a060336cbb72fe969666d337b87198b1add2abaa59cca226820b32933a4" }, // genesis
+            { mkHdr(2, "00000a060336cbb72fe969666d337b87198b1add2abaa59cca226820b32933a4",
+                    "a742b6bcd8b947b0aa98f44a5d20c15e75fdf790114445e10f899b5cad92568c", 1360426882, 0x1e0fffff, 1789596956),
+              "00000a79e4cfd4725f3e8581ff205e9d2c2a7c22ff05a18b348977324d117e9f" }, // 1 (PoW)
+            { mkHdr(6, "f11f62642ad5db6775e0de5b7a54446f6be5e8ddeb649c9eaa39d819961fa0d5",
+                    "017a440bcc34fcf397f583ed7ba82e82cbfbc7d094e68c87fdffec2880f9e555", 1795822652, 0x1c11bbc8, 0),
+              "ffc07ad4f709688dd509bde26be46b62376deb39dd98ee5c56881d66810a109e" }, // 1114415 (PoS)
+        };
+        for (const auto & b : blocks)
+            if (BTC::HashBlockHeaderRev(b.hdr).toHex() != b.hash)
+                throw Exception(QString("NVC header hash mismatch, expected %1").arg(b.hash));
+
+        Log() << "Testing Novacoin tx (with nTime) and block (with trailing PoS signature) deserialization ...";
+        const QByteArray cbHex = "010000003c140a6b010000000000000000000000000000000000000000000000000000000000000000ffffffff0d"
+                                 "032f011101010372ea00005558ffffffff0100000000000000000000000000";
+        const QByteArray cbTxid = "7c8309098658aa6c90ea9ecc36ad63582e4b6cb3d2dafdb7e042c5f4da9f111b";
+        const auto cb = BTC::Deserialize<bitcoin::CTransaction>(Util::ParseHexFast(cbHex), 0, false, false, false, true);
+        if (QString::fromStdString(cb.GetId().ToString()) != cbTxid) throw Exception("NVC coinbase txid mismatch");
+        const QByteArray sig = Util::ParseHexFast("3045022100c255454cf0eedb27a6fe44123cb325c7362c70e0ae24973e347fc6dfb8c525b6"
+                                                  "02206e030dc7dcd50ca4d0683d7a45e23bb478d9f9a8561dfe0e9fed5f5bd70856a7");
+        QByteArray rawblock = blocks[2].hdr + QByteArray(1, char(1)) + Util::ParseHexFast(cbHex)
+                              + QByteArray(1, char(sig.size())) + sig;
+        const auto blk = BTC::Deserialize<bitcoin::CBlock>(rawblock, 0, false, false, false, false);
+        if (blk.vtx.size() != 1 || QString::fromStdString(blk.vtx[0]->GetId().ToString()) != cbTxid)
+            throw Exception("NVC block deserialization failed");
+        if (BTC::Serialize(*blk.vtx[0]) != Util::ParseHexFast(cbHex)) throw Exception("NVC tx did not re-serialize identically");
+
+        Log(Log::BrightWhite) << "All novacoin unit tests passed!";
+    }
+
+    auto t2 = App::registerTest("novacoin", testNovacoin);
 } // namespace
 #endif

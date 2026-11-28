@@ -81,6 +81,9 @@ struct CoinConfig {
     /// not. Leave unset for the DIMI/Blackcoin-more rule (nTime only on nVersion==1). Requires
     /// hasTransactionTimestamp = true. Decided per-block from the header version in BTC::Deserialize.
     std::optional<int32_t> txTimestampMaxBlockVersion;
+    /// Peercoin/Novacoin rule: EVERY tx (any tx version, in blocks and standalone/mempool) carries nTime.
+    /// Requires hasTransactionTimestamp = true; takes precedence over txTimestampMaxBlockVersion.
+    bool txTimestampAlways = false;
     bool hasCoinStake = false;            ///< PoS marker; reserved (today: future-proofing only)
     bool hasPoSBlockSig = false;          ///< PoS block-signature trailer; reserved
     uint32_t headerExtraBytes = 0;        ///< extra bytes after the 80-byte header (0 today)
@@ -106,6 +109,13 @@ struct CoinConfig {
     bool initialHasSubmitPackageRPC = false;
     bool sendRawTxRequiresMaxBurnAmount = false; ///< Core ≥ 0.25.0 — gated on runtime version too
     bool lacksGetZmqNotifications = false;
+    /// Pre-0.9-era daemon RPC (Novacoin 0.5.x): no getnetworkinfo / getblockchaininfo / getblockheader /
+    /// getmempoolinfo / estimatefee, `getblock` is JSON-only and `getrawmempool` takes no args. When set:
+    /// coin detection falls back to `getinfo` (its "version" string stands in for the subversion, so put
+    /// that prefix in subversionPrefixes), chain info comes from getinfo + getbestblockhash, raw blocks
+    /// come from `dumpblock <hash>`, header-by-hash lookups use JSON `getblock`, and fee estimates /
+    /// mempool.get_info / relayfee are answered locally from getinfo's "paytxfee".
+    bool legacyRpc = false;
 
     // ---- peer discovery & server-side bits ----
     /// Qt-resource path prefix for peer seed JSON files (e.g. ":resources/bch/"). Empty disables peering.

@@ -293,7 +293,9 @@ void SynchMempoolTask::doGetRawMempool()
     /// most efficient.  With full mempools bitcoind CPU usage could spike to 100% if we use the verbose mode.
     /// It turns out we don't need that verbose data anyway (such as a full ancestor count) -- it's enough to have a bool
     /// flag for "has unconfirmed parent tx", and be done with it.  Everything else we can calculate.
-    submitRequest("getrawmempool", {false}, [this, t0 = Tic()](const RPC::Message & resp) mutable {
+    // Legacy (Novacoin 0.5.x) daemons' getrawmempool takes no arguments (and is always non-verbose).
+    const QVariantList params = ctl->isLegacyRpcCoin() ? QVariantList{} : QVariantList{false};
+    submitRequest("getrawmempool", params, [this, t0 = Tic()](const RPC::Message & resp) mutable {
         t0.fin();
         const Tic t1;
         std::size_t newCt = 0, droppedCt = 0, ignoredCt = 0;

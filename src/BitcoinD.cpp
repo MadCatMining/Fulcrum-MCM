@@ -265,103 +265,136 @@ void BitcoinDMgr::refreshBitcoinDNetworkInfo()
 {
     submitRequest(this, newId(), "getnetworkinfo", QVariantList{},
         // success
-        [this](const RPC::Message & reply) {
-            BitcoinDVersionParseResult res;
-            bool lacksGetZmqNotifications{};
-            {
-                const QVariantMap networkInfo = reply.result().toMap();
-                // --- EXCLUSIVE-LOCKED SCOPE below this line ---
-                std::unique_lock g(bitcoinDInfoLock);
-                bitcoinDInfo.subversion = networkInfo.value("subversion", "").toString();
-                // try and determine version major/minor/revision, and write result to 'res'
-                res = [](const auto &subversion, const auto &networkInfo) -> BitcoinDVersionParseResult {
-                    bool ok = false;
-                    const auto val = networkInfo.value("version", 0).toUInt(&ok);
-
-                    if (ok) {
-                        const BitcoinDVersionParseResult res(val, subversion);
-                        DebugM("Refreshed version info from bitcoind, version: ", res.version.toString(true),
-                               ", subversion: ", subversion);
-                        return res;
-                    } else {
-                        Warning() << "Failed to parse version info from bitcoind";
-                        return {};
-                    }
-                }(bitcoinDInfo.subversion, networkInfo);
-                // assign to shared object now from stack object BitcoinDVersionParseResult
-                std::tie(bitcoinDInfo.isBchd, bitcoinDInfo.isCore, bitcoinDInfo.isBU, bitcoinDInfo.isLTC,
-                         bitcoinDInfo.isFlowee, bitcoinDInfo.isDIMI, bitcoinDInfo.isDGC, bitcoinDInfo.isIL8P, bitcoinDInfo.isLYNX, bitcoinDInfo.version)
-                    = std::tie(res.isBchd, res.isCore, res.isBU, res.isLTC, res.isFlowee, res.isDIMI, res.isDGC, res.isIL8P, res.isLYNX, res.version);
-                bitcoinDInfo.relayFee = networkInfo.value("relayfee", 0.0).toDouble();
-                bitcoinDInfo.warnings = networkInfo.value("warnings", "").toString();
-                // set quirk flags: requires 0 arg `estimatefee`?
-                auto isZeroArgEstimateFee = [](const Version &version, const QString &subversion) -> bool {
-                    static const QString zeroArgSubversionPrefixes[] = { "/Bitcoin ABC", "/Bitcoin Cash Node", };
-                    constexpr Version minVersion{0, 20, 2};
-                    if (version < minVersion)
-                        return false;
-                    for (const auto & prefix : zeroArgSubversionPrefixes)
-                        if (subversion.startsWith(prefix))
-                            return true;
-                    return false;
-                };
-                // Set up RpcSupportInfo
-                auto & rsi = bitcoinDInfo.rpcSupportInfo;
-                rsi.isZeroArgEstimateFee = !res.isCore && !res.isLTC && isZeroArgEstimateFee(bitcoinDInfo.version, bitcoinDInfo.subversion);
-                rsi.hasEstimateSmartFee = (res.isCore || res.isLTC) && bitcoinDInfo.version >= Version{0, 15, 0};
-                rsi.isTwoArgEstimateSmartFee = (res.isCore && bitcoinDInfo.version >= Version{0, 16, 0}) || (res.isLTC && bitcoinDInfo.version >= Version{0, 15, 0});
-                // Implementations known to lack `getzmqnotifications`:
-                // - bchd (all versions)
-                // - BU before version 1.9.1.0
-                rsi.lacksGetZmqNotifications = lacksGetZmqNotifications = res.isBchd || (res.isBU && res.version < Version{1, 9, 1});
-                // clear hasDSProofRPC until proven to have it via a query
-                rsi.hasDSProofRPC = false;
-                // Bitcoin Core 25.0+ requires specifying `maxburnamount` in the `sendrawtransaction` RPC
-                // (which, due to bitcoin core weirdness in how it encodes the version int, maps to Version{0, 25, 0}
-                rsi.sendRawTransactionRequiresMaxBurnAmount = res.isCore && bitcoinDInfo.version >= Version{0, 25, 0};
-                // The `submitpackage` RPC is only present in a form usable by us on Bitcoin Core >= 27.0.0, but it was
-                // almost worthless on 27.0.0 (according to ElectrumX devs), and so we require 28.0.0.
-                // See: https://github.com/spesmilo/electrum-protocol/pull/6/files#r2459860616
-                rsi.hasSubmitPackageRPC = res.isCore && bitcoinDInfo.version >= Version{0, 28, 0};
-                if (res.isCore && !rsi.hasSubmitPackageRPC) // warn admin about lack of submitpackage support
-                    Warning() << "*** Compatibility Warning *** The BTC full node backing this " APPNAME " instance"
-                                 " lacks a known-good `submitpackage` RPC, which is needed for full Electrum protocol"
-                                 " v1.6 support. Disabling the `blockchain.transaction.broadcast_package` method out of"
-                                 " an abundance of caution. Consider upgrading your full node to either Bitcoin Core or"
-                                 " Bitcoin Knots version 28.0.0 or above.";
-            } // end lock scope
-            // Coin selection is driven by the central CoinConfig registry (CoinConfig.cpp): the first registered coin
-            // whose `subversionPrefixes` matches `bitcoinDInfo.subversion` wins. We default to BCH when nothing
-            // matches — preserving the historical "if unknown, treat as BCH (non-segwit, with CashTokens)" behaviour.
-            BTC::Coin coin = BTC::Coin::BCH;
-            if (const auto *cc = BTC::GetCoinConfigBySubversion(bitcoinDInfo.subversion))
-                coin = cc->coin;
-            emit coinDetected(coin);
-            // next, be sure to set up the ping time appropriately for bchd vs bitcoind
-            resetPingTimers(int(res.isBchd ? PingTimes::BCHD : PingTimes::Normal));
-            // next up, do this query
-            refreshBitcoinDGenesisHash();
-            // and also this one, if we were compiled with libzmq and remote bitcoind may have `getzmqnotifications`
-            if (ZmqSubNotifier::isAvailable()) {
-                if (lacksGetZmqNotifications) {
-                    DebugM("remote bitcoind lacks RPC method: getzmqnotifications");
-                    setZmqNotifications({}); // clear it -- tells client code no zmq
-                } else
-                    refreshBitcoinDZmqNotifications(); // query since we think bitcoind maybe has the RPC method
-            }
-            // also see about refreshing whether remote bitcoind has dsproof rpc, but don't query for versions we know don't have it.
-            if (!res.definitelyLacksDSProofRPC())
-                probeBitcoinDHasDSProofRPC();
-            // determine if we can use the "fast" ping method, "uptime", or whether we fall back to "help help"
-            probeBitcoinDHasUptimeRPC();
-        },
+        [this](const RPC::Message & reply) { processNetworkInfo(reply.result().toMap()); },
         // error
-        [](const RPC::Message &msg) {
+        [this](const RPC::Message &msg) {
+            if (msg.errorCode() == RPC::ErrorCodes::Code_MethodNotFound) {
+                // Pre-0.9-era daemon (e.g. Novacoin 0.5.x): no getnetworkinfo -> fall back to getinfo
+                DebugM("bitcoind lacks getnetworkinfo, falling back to getinfo");
+                refreshBitcoinDNetworkInfoLegacy();
+                return;
+            }
             Error() << "getnetworkinfo error, code: " << msg.errorCode() << ", error: " << msg.errorMessage();
         },
         // failure
         [](const RPC::Message::Id &, const QString &reason){ Error() << "getnetworkinfo failed: " << reason; }
     );
+}
+
+void BitcoinDMgr::refreshBitcoinDNetworkInfoLegacy()
+{
+    submitRequest(this, newId(), "getinfo", QVariantList{},
+        // success
+        [this](const RPC::Message & reply) {
+            const QVariantMap info = reply.result().toMap();
+            QVariantMap ni;
+            // getinfo's "version" is a free-form string here (e.g. "nvc-v0.5.8-53-g510a23a2-dirty-bdb-gcc"); it
+            // stands in for the subversion (CoinConfig::subversionPrefixes match against it). No numeric version.
+            ni["subversion"] = info.value("version").toString();
+            ni["version"] = 0u;
+            // No relay fee reported; use the node's pay-tx-fee (defaults to the coin's MIN_TX_FEE per kB).
+            ni["relayfee"] = info.value("paytxfee", 0.0).toDouble();
+            ni["warnings"] = info.value("errors", "").toString();
+            processNetworkInfo(ni);
+        },
+        // error
+        [](const RPC::Message &msg) {
+            Error() << "getinfo error, code: " << msg.errorCode() << ", error: " << msg.errorMessage();
+        },
+        // failure
+        [](const RPC::Message::Id &, const QString &reason){ Error() << "getinfo failed: " << reason; }
+    );
+}
+
+void BitcoinDMgr::processNetworkInfo(const QVariantMap &networkInfo)
+{
+    BitcoinDVersionParseResult res;
+    bool lacksGetZmqNotifications{};
+    {
+        // --- EXCLUSIVE-LOCKED SCOPE below this line ---
+        std::unique_lock g(bitcoinDInfoLock);
+        bitcoinDInfo.subversion = networkInfo.value("subversion", "").toString();
+        // try and determine version major/minor/revision, and write result to 'res'
+        res = [](const auto &subversion, const auto &networkInfo) -> BitcoinDVersionParseResult {
+            bool ok = false;
+            const auto val = networkInfo.value("version", 0).toUInt(&ok);
+
+            if (ok) {
+                const BitcoinDVersionParseResult res(val, subversion);
+                DebugM("Refreshed version info from bitcoind, version: ", res.version.toString(true),
+                       ", subversion: ", subversion);
+                return res;
+            } else {
+                Warning() << "Failed to parse version info from bitcoind";
+                return {};
+            }
+        }(bitcoinDInfo.subversion, networkInfo);
+        // assign to shared object now from stack object BitcoinDVersionParseResult
+        std::tie(bitcoinDInfo.isBchd, bitcoinDInfo.isCore, bitcoinDInfo.isBU, bitcoinDInfo.isLTC,
+                 bitcoinDInfo.isFlowee, bitcoinDInfo.isDIMI, bitcoinDInfo.isDGC, bitcoinDInfo.isIL8P, bitcoinDInfo.isLYNX, bitcoinDInfo.version)
+            = std::tie(res.isBchd, res.isCore, res.isBU, res.isLTC, res.isFlowee, res.isDIMI, res.isDGC, res.isIL8P, res.isLYNX, res.version);
+        bitcoinDInfo.relayFee = networkInfo.value("relayfee", 0.0).toDouble();
+        bitcoinDInfo.warnings = networkInfo.value("warnings", "").toString();
+        // set quirk flags: requires 0 arg `estimatefee`?
+        auto isZeroArgEstimateFee = [](const Version &version, const QString &subversion) -> bool {
+            static const QString zeroArgSubversionPrefixes[] = { "/Bitcoin ABC", "/Bitcoin Cash Node", };
+            constexpr Version minVersion{0, 20, 2};
+            if (version < minVersion)
+                return false;
+            for (const auto & prefix : zeroArgSubversionPrefixes)
+                if (subversion.startsWith(prefix))
+                    return true;
+            return false;
+        };
+        // Set up RpcSupportInfo
+        auto & rsi = bitcoinDInfo.rpcSupportInfo;
+        rsi.isZeroArgEstimateFee = !res.isCore && !res.isLTC && isZeroArgEstimateFee(bitcoinDInfo.version, bitcoinDInfo.subversion);
+        rsi.hasEstimateSmartFee = (res.isCore || res.isLTC) && bitcoinDInfo.version >= Version{0, 15, 0};
+        rsi.isTwoArgEstimateSmartFee = (res.isCore && bitcoinDInfo.version >= Version{0, 16, 0}) || (res.isLTC && bitcoinDInfo.version >= Version{0, 15, 0});
+        // Implementations known to lack `getzmqnotifications`:
+        // - bchd (all versions)
+        // - BU before version 1.9.1.0
+        rsi.lacksGetZmqNotifications = lacksGetZmqNotifications = res.isBchd || (res.isBU && res.version < Version{1, 9, 1});
+        // clear hasDSProofRPC until proven to have it via a query
+        rsi.hasDSProofRPC = false;
+        // Bitcoin Core 25.0+ requires specifying `maxburnamount` in the `sendrawtransaction` RPC
+        // (which, due to bitcoin core weirdness in how it encodes the version int, maps to Version{0, 25, 0}
+        rsi.sendRawTransactionRequiresMaxBurnAmount = res.isCore && bitcoinDInfo.version >= Version{0, 25, 0};
+        // The `submitpackage` RPC is only present in a form usable by us on Bitcoin Core >= 27.0.0, but it was
+        // almost worthless on 27.0.0 (according to ElectrumX devs), and so we require 28.0.0.
+        // See: https://github.com/spesmilo/electrum-protocol/pull/6/files#r2459860616
+        rsi.hasSubmitPackageRPC = res.isCore && bitcoinDInfo.version >= Version{0, 28, 0};
+        if (res.isCore && !rsi.hasSubmitPackageRPC) // warn admin about lack of submitpackage support
+            Warning() << "*** Compatibility Warning *** The BTC full node backing this " APPNAME " instance"
+                         " lacks a known-good `submitpackage` RPC, which is needed for full Electrum protocol"
+                         " v1.6 support. Disabling the `blockchain.transaction.broadcast_package` method out of"
+                         " an abundance of caution. Consider upgrading your full node to either Bitcoin Core or"
+                         " Bitcoin Knots version 28.0.0 or above.";
+    } // end lock scope
+    // Coin selection is driven by the central CoinConfig registry (CoinConfig.cpp): the first registered coin
+    // whose `subversionPrefixes` matches `bitcoinDInfo.subversion` wins. We default to BCH when nothing
+    // matches — preserving the historical "if unknown, treat as BCH (non-segwit, with CashTokens)" behaviour.
+    BTC::Coin coin = BTC::Coin::BCH;
+    if (const auto *cc = BTC::GetCoinConfigBySubversion(bitcoinDInfo.subversion))
+        coin = cc->coin;
+    emit coinDetected(coin);
+    // next, be sure to set up the ping time appropriately for bchd vs bitcoind
+    resetPingTimers(int(res.isBchd ? PingTimes::BCHD : PingTimes::Normal));
+    // next up, do this query
+    refreshBitcoinDGenesisHash();
+    // and also this one, if we were compiled with libzmq and remote bitcoind may have `getzmqnotifications`
+    if (ZmqSubNotifier::isAvailable()) {
+        if (lacksGetZmqNotifications) {
+            DebugM("remote bitcoind lacks RPC method: getzmqnotifications");
+            setZmqNotifications({}); // clear it -- tells client code no zmq
+        } else
+            refreshBitcoinDZmqNotifications(); // query since we think bitcoind maybe has the RPC method
+    }
+    // also see about refreshing whether remote bitcoind has dsproof rpc, but don't query for versions we know don't have it.
+    if (!res.definitelyLacksDSProofRPC())
+        probeBitcoinDHasDSProofRPC();
+    // determine if we can use the "fast" ping method, "uptime", or whether we fall back to "help help"
+    probeBitcoinDHasUptimeRPC();
 }
 
 void BitcoinDMgr::resetPingTimers(int timeout_ms)

@@ -49,6 +49,8 @@ reverse-proxy (PROXY-protocol) support and Docker/deployment conveniences.
 - Peercoin/Novacoin/Blackcoin-lineage coins carry a 4-byte `nTime` inside each transaction, which
   is part of the txid hash. Two rules are supported:
   - **DIMI / Blackcoin-more:** `nTime` only on `nVersion == 1` transactions.
+  - **Peercoin / Novacoin (NVC):** `nTime` on **every** transaction, in every era, in blocks and in the
+    mempool alike (`txTimestampAlways`).
   - **Blackcoin "protocol v2" lineage (IL8P/LYNX):** `nTime` on **all** tx versions until a
     protocol switch bumped the **block header version** past 7. This is keyed on the *block header
     version*, not the tx version — a new `SERIALIZE_TRANSACTION_TIMESTAMP_ALLVERS` stream flag plus
@@ -71,6 +73,7 @@ In addition to upstream **BCH / BTC / LTC**:
 | Lynx | LYNX | scrypt genesis → SHA256d PoS | era-based tx `nTime`, SegWit |
 | Lynx family¹ | ALIOTH … INDUS | scrypt genesis → SHA256d PoS | era-based tx `nTime`, SegWit |
 | Unobtanium³ | UNO | SHA256d | merge-mined (AuxPoW), SegWit, legacy `estimatefee` |
+| Novacoin⁴ | NVC | scrypt (all blocks, PoW and PoS) | tx `nTime` on every tx, legacy 0.5.x RPC |
 
 ¹ The **Lynx multi-chain family**: Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea,
 Halley, Indus — the same Lynx codebase compiled per `export $NAME=<chain>`. Each reports subversion
@@ -89,6 +92,23 @@ bit `0x100` set carry an AuxPoW proof between the 80-byte header and the transac
 `BTC::StripAuxPow()` removes it before the block is parsed (enabled per coin by `CoinConfig::hasAuxPow`).
 Block IDs are still the SHA256d hash of UNO's own 80-byte header, and clients get 80-byte headers, as
 with ElectrumX.
+
+⁴ **Novacoin** is a 2013 Peercoin-lineage coin, pure PoS today. Its 0.5.x daemon predates most of the RPC
+Fulcrum normally uses: there is no `getnetworkinfo`, `getblockchaininfo`, `getblockheader`,
+`getmempoolinfo` or `estimatefee`, `getblock` only returns JSON, and `getrawmempool` takes no arguments.
+`CoinConfig::legacyRpc` switches to what it does have:
+
+| Fulcrum normally calls | Novacoin replacement |
+|---|---|
+| `getnetworkinfo` | `getinfo` |
+| `getblockchaininfo` | `getinfo` + `getbestblockhash` |
+| `getblock <hash> false` | `dumpblock <hash>` |
+| `getblockheader` | JSON `getblock` |
+
+Fee estimates, `mempool.get_info` and `blockchain.relayfee` report the node's `paytxfee`, which
+defaults to the 0.001 NVC/kB minimum. Its peers advertise `/Satoshi:0.7.6.9/`, which would clash with
+BTC, but detection uses `getinfo`'s `version` string (`nvc-v…`) instead. NVC has **6 decimals**
+(`COIN = 1,000,000`); amounts are indexed in those base units, as the daemon stores them.
 
 ### 7. Reverse-proxy / PROXY-protocol support
 - `src/ProxyProtocol.{h,cpp}` — accepts HAProxy **PROXY protocol v1 and v2**, so the real client
@@ -118,6 +138,16 @@ version bytes, and block-ID hash. If it needs a new PoW hash, append to `PoWHash
 to `HashHeaderForAlgo`, and vendor the implementation under `src/bitcoin/crypto/`.
 
 ## Release history
+
+### v1.3.0
+- **New coin: Novacoin (NVC)**, detected from `getinfo`'s `nvc-…` version string. P2PKH `0x08`, P2SH
+  `0x14`, scrypt block IDs for every block, `nTime` on every transaction, PoS block signature ignored.
+  Verified against the source of the daemon (`nvc-v0.5.8-53-g510a23a2`) and live mainnet data: genesis,
+  block 1 (PoW) and block 1114415 (PoS) hash correctly, and the tip coinbase txid matches. A new
+  `--test novacoin` unit test covers this.
+- **New: legacy-RPC daemon support** (`CoinConfig::legacyRpc`) for 0.5.x-era daemons. When
+  `getnetworkinfo` is missing, Fulcrum now falls back to `getinfo` to detect the coin. Only NVC uses
+  this today; every other coin keeps the existing RPC calls.
 
 ### v1.2.0
 - **New coin: Unobtanium (UNO)**, detected from the daemon's `/Unobtanium:` subversion. P2PKH `0x82`,

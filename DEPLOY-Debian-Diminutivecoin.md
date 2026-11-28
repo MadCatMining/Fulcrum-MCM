@@ -1,10 +1,10 @@
 # Deploying Fulcrum-MCM (with Diminutivecoin support) on Debian
 
-> **Version:** this guide targets **Fulcrum-MCM `v1.2.0`** (forked from upstream Fulcrum `v2.1.1`).
+> **Version:** this guide targets **Fulcrum-MCM `v1.3.0`** (forked from upstream Fulcrum `v2.1.1`).
 > The build produces a binary named **`Fulcrum-MCM`**; `./Fulcrum-MCM --version` prints
-> `Fulcrum-MCM 1.2.0` and `Forked from Fulcrum v2.1.1`.
+> `Fulcrum-MCM 1.3.0` and `Forked from Fulcrum v2.1.1`.
 
-> **Upgrading to v1.1.x / v1.2.0**
+> **Upgrading to v1.1.x – v1.3.0**
 > - **Most coins:** swap the binary and restart. The DB format is unchanged, so DIMI / IL8P / LYNX /
 >   BCH / BTC / LTC servers resume indexing where they left off.
 > - **DGC (Digitalcoin): delete the database and re-sync.** Digitalcoin left its own multi-algo
@@ -13,6 +13,7 @@
 >   point `bitcoind =` at the new daemon (default RPC port **7998**) and start it again. **Use v1.1.1
 >   or later:** v1.1.0 misread DGC transactions and stops at block 8451, and a DB created by v1.1.0
 >   must be wiped too.
+> - **New in v1.3.0:** Novacoin (NVC), the first coin with a legacy 0.5.x-era daemon RPC. See § 9.9.
 > - **New in v1.2.0:** Unobtanium (UNO), the first merge-mined (AuxPoW) coin. See § 9.8.
 > - **New in v1.1.0:** the Lynx multi-chain family (Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus,
 >   Fenrir, Galatea, Halley, Indus). Each is detected automatically from its daemon's `/<Chain>:`
@@ -31,7 +32,7 @@
 > scrypt genesis), **LYNX** (Lynx core, scrypt genesis), and the **Lynx multi-chain family**:
 > Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea, Halley, Indus (the same Lynx
 > codebase built per `$NAME`, with the same scrypt-genesis → SHA256d PoS format), and **UNO**
-> (Unobtanium, SHA256d, merge-mined / AuxPoW).
+> (Unobtanium, SHA256d, merge-mined / AuxPoW), and **NVC** (Novacoin, scrypt PoS, legacy RPC).
 > Vendored block-ID hashes:
 > **SHA256d, Tribus, Scrypt** (≈35 more names are reserved in the enum and throw until
 > their sources are vendored). Three mechanisms added for the trickier PoS/altcoin
@@ -48,6 +49,9 @@
 >   block *identifier* is a non-SHA256d hash (DIMI = Tribus, IL8P genesis = scrypt).
 > - **`hasAuxPow`** — merge-mined coins whose blocks carry an AuxPoW proof between the header
 >   and the transactions (UNO). The proof is removed before the block is parsed.
+> - **`txTimestampAlways`** — Peercoin/Novacoin rule: every tx carries `nTime`, in every era (NVC).
+> - **`legacyRpc`** — 0.5.x-era daemons without `getnetworkinfo` / `getblockchaininfo` /
+>   `getblockheader` / `getmempoolinfo` / `estimatefee` (NVC). See § 9.9.
 
 > **Important — binary portability**
 > The binary compiled on this Nobara/Fedora machine was built with **gcc 15.2.1**
@@ -266,7 +270,7 @@ family `Alioth … Indus`):
 ```cpp
 enum class Coin { Unknown = 0, BCH, BTC, LTC, DIMI, DGC, IL8P, LYNX,
                   Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea, Halley, Indus,
-                  UNO, /* NEW: */ PEERCOIN };
+                  UNO, NVC, /* NEW: */ PEERCOIN };
 ```
 
 > **Lynx-family chain?** If the new coin is another `$NAME=<chain>` build of the Lynx codebase,
@@ -327,15 +331,15 @@ CoinConfig makeMyCoin() {
 Then add it to the registry:
 
 ```cpp
-static const std::array<CoinConfig, 19> kRegistry = {{
-    makeUnknown(), makeBCH(), makeBTC(), makeLTC(), makeDIMI(), makeDGC(), makeIL8P(), makeLYNX(), makeUNO(),
+static const std::array<CoinConfig, 20> kRegistry = {{
+    makeUnknown(), makeBCH(), makeBTC(), makeLTC(), makeDIMI(), makeDGC(), makeIL8P(), makeLYNX(), makeUNO(), makeNVC(),
     makeLynxFamily(Coin::Alioth, "ALIOTH", "Alioth", "/Alioth:", 0xd7, 0xef),
     // ... the other eight Lynx-family chains ...
     makeMyCoin(),                         // <-- new
 }};
 ```
 
-Bump the `std::array<…, N>` size to match (it is `18` today; adding one coin makes it `19`). Each
+Bump the `std::array<…, N>` size to match (it is `19` today; adding one coin makes it `20`). Each
 array size must appear twice: in the function's return type and in the `kRegistry` declaration.
 
 ### Step 3 — wire a new PoW hash, *only if needed*
@@ -584,3 +588,55 @@ CoinConfig makeUNO() {
 bytes must parse as the tx list with nothing left over, and a single-tx block's txid must equal the
 header's merkle root.
 
+### 9.9 Worked example — a legacy-RPC PoS coin (NVC)
+
+Novacoin is a 2013 Peercoin-lineage coin (pure PoS today). Two things make it different.
+
+**Format.** Every block ID, PoW and PoS alike, is `scrypt(N=1024, r=1, p=1)` of the 80-byte header.
+So `blockIdAlgo = Scrypt` is set, with no genesis override. Every transaction has a 4-byte `nTime` right
+after `nVersion`, whatever its version, and it is part of the txid (`txTimestampAlways = true`). Blocks
+end with the PoS signature `vchBlockSig`, which is ignored like on the other PoS coins.
+
+**RPC.** The daemon (`nvc-v0.5.8`) predates most of the RPC Fulcrum uses. `legacyRpc = true` switches to:
+
+| Fulcrum normally calls | With `legacyRpc` |
+|---|---|
+| `getnetworkinfo` (coin detection) | `getinfo`. Its `version` string (`nvc-v0.5.8-…`) is matched against `subversionPrefixes` |
+| `getblockchaininfo` | `getinfo` (`blocks`, `testnet`) + `getbestblockhash` |
+| `getblock <hash> false` | `dumpblock <hash>` (serialized block) |
+| `getblockheader <hash>` | JSON `getblock <hash>` |
+| `getrawmempool false` | `getrawmempool` (takes no args) |
+| `estimatefee`, `getmempoolinfo` | answered locally with `getinfo`'s `paytxfee` (default 0.001 NVC/kB) |
+
+Peers advertise `/Satoshi:0.7.6.9/`, which is Fulcrum's BTC prefix, so peer subversions can't be used
+to identify the coin. The daemon has no `getnetworkinfo` anyway.
+
+```cpp
+CoinConfig makeNVC() {
+    CoinConfig c;
+    c.coin = Coin::NVC;
+    c.name = QStringLiteral("NVC");
+    c.displayName = QStringLiteral("Novacoin");
+    c.subversionPrefixes = {QStringLiteral("nvc-"), QStringLiteral("/Novacoin:")};
+    c.mainnetVer = {0x08, 0x14};
+    c.hasTransactionTimestamp = true;
+    c.txTimestampAlways = true;
+    c.blockIdAlgo = PoWHashAlgo::Scrypt;
+    c.getRawTxVerboseAsInt = true;
+    c.legacyRpc = true;
+    c.peerResourcePath = QString();
+    return c;
+}
+```
+
+| NVC parameter | Value |
+|---|---|
+| Daemon `getinfo.version` | `nvc-v0.5.8-53-g510a23a2-…` |
+| P2P / RPC port | 7777 / **8344** (default; `rpcport=` in `novacoin.conf` overrides it) |
+| Address bytes | P2PKH `0x08`, P2SH `0x14` |
+| Genesis | `00000a060336cbb72fe969666d337b87198b1add2abaa59cca226820b32933a4` (scrypt) |
+| Decimals | **6** (`COIN = 1,000,000`); amounts are indexed in those base units |
+
+There is no `txindex=` option to set: Novacoin 0.5.x always keeps a full transaction index, so
+`getrawtransaction` works for any confirmed transaction. Check the build with
+`./Fulcrum-MCM --test novacoin` (only in an `ENABLE_TESTS` build).

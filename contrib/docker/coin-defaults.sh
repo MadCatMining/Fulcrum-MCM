@@ -20,6 +20,7 @@ set_coin_defaults() {
         DIMI)     DEF_DAEMON_RPC_PORT=21102; DEF_PEERING=false ;;
         DGC)      DEF_DAEMON_RPC_PORT=7998;  DEF_PEERING=false ;;  # Digitalcoin (Lynx-family PoS, SHA256d genesis)
         IL8P)     DEF_DAEMON_RPC_PORT=9459;  DEF_PEERING=false ;;  # Infiniloop (scrypt genesis, PoS)
+        NVC)      DEF_DAEMON_RPC_PORT=8344;  DEF_PEERING=false ;;  # Novacoin (scrypt PoS, legacy 0.5.x RPC)
         # NB: DGC/IL8P daemons let you pick any rpcport=; the values above are just this project's
         # conventional defaults. Override with DAEMON_RPC_PORT if your daemon uses a different one.
         # Future coins (placeholders — verify the actual RPC port against each project's docs

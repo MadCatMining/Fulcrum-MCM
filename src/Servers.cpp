@@ -1582,6 +1582,11 @@ void Server::rpc_blockchain_block_headers(Client *c, const RPC::BatchId batchId,
         return resp;
     });
 }
+namespace {
+/// Pre-0.9-era daemon RPC (Novacoin 0.5.x): see CoinConfig::legacyRpc
+bool IsLegacyRpcCoin() { return BTC::GetCoinConfig(BTC::GetCurrentCoin()).legacyRpc; }
+} // namespace
+
 void Server::rpc_blockchain_estimatefee(Client *c, const RPC::BatchId batchId, const RPC::Message &m)
 {
     const QVariantList l = m.paramsList();
@@ -1597,6 +1602,13 @@ void Server::rpc_blockchain_estimatefee(Client *c, const RPC::BatchId batchId, c
         if (!IsMetaTypeStringLike(var))
             throw RPCError(QString("%1 second parameter should be a string").arg(m.method));
         mode = var.toString();
+    }
+
+    if (IsLegacyRpcCoin()) {
+        // No fee estimator in the daemon at all: answer with the node's pay-tx-fee (coin units per kB), which
+        // defaults to the coin's MIN_TX_FEE -- the static minimum such daemons enforce for block inclusion.
+        emit c->sendResult(batchId, m.id, bitcoindmgr->getBitcoinDInfo().relayFee);
+        return;
     }
 
     QVariantList params;
@@ -1688,11 +1700,15 @@ void Server::rpc_blockchain_header_get(Client *c, const RPC::BatchId batchId, co
     if (const auto var = l[0]; IsMetaTypeStringLike(var)) {
         const BlockHash blockHash = parseFirstHashParamCommon(m, "Invalid block hash");
         // first we need to figure out the height of this block hash -- query bitcoind
-        generic_async_to_bitcoind(c, batchId, m.id, "getblockheader", {var, true},
-                                  [blockHash, this, c, batchId, msgId = m.id](const RPC::Message &resp){
+        // Legacy (Novacoin 0.5.x) daemons lack getblockheader; their JSON getblock has the same "height" and
+        // "confirmations" keys, except that a block off the main chain reports 0 confirmations rather than -1.
+        const bool legacy = IsLegacyRpcCoin();
+        generic_async_to_bitcoind(c, batchId, m.id, legacy ? "getblock" : "getblockheader",
+                                  legacy ? QVariantList{var} : QVariantList{var, true},
+                                  [blockHash, this, c, batchId, msgId = m.id, minConfs = legacy ? 1 : 0](const RPC::Message &resp){
             const auto map = resp.result().toMap();
             bool ok;
-            if (!map.contains("confirmations") || map.value("confirmations", -1).toInt(&ok) < 0 || !ok)
+            if (!map.contains("confirmations") || map.value("confirmations", -1).toInt(&ok) < minConfs || !ok)
                 // not on main chain, give up
                 throw RPCError("Block not in active chain");
             // parse height
@@ -2829,6 +2845,12 @@ void Server::rpc_mempool_get_fee_histogram(Client *c, const RPC::BatchId batchId
 void Server::rpc_mempool_get_info(Client *c, const RPC::BatchId batchId, const RPC::Message &m)
 {
     constexpr int kMempoolInfoStaleThreshMS = 250; // if older than 250 msecs, refresh (this rate-limits spammers)
+    if (IsLegacyRpcCoin()) {
+        // No getmempoolinfo in the daemon; report its static minimum fee (see rpc_blockchain_estimatefee)
+        const double fee = bitcoindmgr->getBitcoinDInfo().relayFee;
+        emit c->sendResult(batchId, m.id, QVariantMap{{"mempoolminfee", fee}, {"minrelaytxfee", fee}});
+        return;
+    }
     generic_async_to_bitcoind(c, batchId, m.id, "getmempoolinfo", QVariantList{},
         [](const RPC::Message &response){
             // to preserve privacy, only grab the following keys, omitting size, bytes, etc

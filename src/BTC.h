@@ -50,7 +50,8 @@ namespace BTC
                       // Lynx multi-chain family (same codebase built per `export $NAME=...`; differ only
                       // in identity + base58 address bytes). See CoinConfig.cpp makeLynxFamily().
                       Alioth, Borrelly, Cassiopeia, Delphinus, Enceladus, Fenrir, Galatea, Halley, Indus,
-                      UNO /* Unobtanium: SHA256d merge-mined (AuxPoW) + SegWit */ };
+                      UNO /* Unobtanium: SHA256d merge-mined (AuxPoW) + SegWit */,
+                      NVC /* Novacoin: Peercoin-lineage scrypt PoS, legacy 0.5.x RPC */ };
 
     QString coinToName(Coin);
     Coin coinFromName(const QString &);
